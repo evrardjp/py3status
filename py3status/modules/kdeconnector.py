@@ -76,6 +76,8 @@ INTERFACE_BATTERY = INTERFACE + ".battery"
 INTERFACE_NOTIFICATIONS = INTERFACE + ".notifications"
 PATH = "/modules/kdeconnect"
 DEVICE_PATH = PATH + "/devices"
+BATTERY_SUBPATH = "/battery"
+NOTIFICATIONS_SUBPATH = "/notifications"
 UNKNOWN = "Unknown"
 UNKNOWN_DEVICE = "unknown device"
 UNKNOWN_SYMBOL = "?"
@@ -99,7 +101,9 @@ class Py3status:
     status_notif = " ✉"
 
     def post_config_hook(self):
+        self._bat = None
         self._dev = None
+        self._not = None
 
     def _init_dbus(self):
         """
@@ -114,6 +118,18 @@ class Py3status:
 
         try:
             self._dev = _bus.get(SERVICE_BUS, DEVICE_PATH + f"/{self.device_id}")
+            try:
+                self._bat = _bus.get(
+                    SERVICE_BUS, DEVICE_PATH + f"/{self.device_id}" + BATTERY_SUBPATH
+                )
+                self._not = _bus.get(
+                    SERVICE_BUS,
+                    DEVICE_PATH + f"/{self.device_id}" + NOTIFICATIONS_SUBPATH,
+                )
+            except Exception:
+                # Fallback to the old version
+                self._bat = None
+                self._not = None
         except Exception:
             return False
 
@@ -170,9 +186,15 @@ class Py3status:
         Get the battery
         """
         try:
+            if self._bat:
+                charge = self._bat.charge
+                isCharging = self._bat.isCharging
+            else:
+                charge = self._dev.charge()
+                isCharging = self._dev.isCharging()
             battery = {
-                "charge": self._dev.charge(),
-                "isCharging": self._dev.isCharging() == 1,
+                "charge": charge,
+                "isCharging": isCharging == 1,
             }
         except Exception:
             return None
@@ -184,7 +206,11 @@ class Py3status:
         Get notifications
         """
         try:
-            notifications = {"activeNotifications": self._dev.activeNotifications()}
+            if self._not:
+                notifications = {"activeNotifications": self._not.activeNotifications()}
+            else:
+                notifications = {"activeNotifications": self._dev.activeNotifications()}
+            notifications = {"activeNotifications": notifications}
         except Exception:
             return None
 

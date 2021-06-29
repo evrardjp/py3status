@@ -169,11 +169,11 @@ Configuration parameters:
         case, such as 'Ft', and still be considered valid as long as it is in
         the below options.
         Options:
-            cm, ft, in, mm, m, yd
+            mm, cm, in
         (default 'in')
     unit_snow: Unit for snow fall
         Options:
-            cm, ft, in, mm, m, yd
+            mm, cm, in
         (default 'in')
     unit_temperature: Unit for temperature
         Options:
@@ -181,7 +181,7 @@ Configuration parameters:
         (default 'F')
     unit_wind: Unit for wind speed
         Options:
-            fsec, msec, mph, kmh
+            fsec, msec, mph, kmh, knot
         (default 'mph')
 
 Format placeholders:
@@ -278,8 +278,8 @@ OWM_DESC = "//weather:0/main"
 OWM_DESC_LONG = "//weather:0/description"
 OWM_HUMIDITY = "//main/humidity"
 OWM_PRESSURE = "//main"
-OWM_RAIN = "//rain/3h"
-OWM_SNOW = "//snow/3h"
+OWM_RAIN = "//rain/1h"
+OWM_SNOW = "//snow/1h"
 OWM_SUNRISE = "//sys/sunrise"
 OWM_SUNSET = "//sys/sunset"
 OWM_TEMP = "//main"
@@ -287,16 +287,17 @@ OWM_WEATHER_ICON = "//weather:0/id"
 OWM_WIND = "//wind"
 
 # Units constants
-RAIN_UNITS = {"cm", "ft", "in", "mm", "m", "yd"}
+RAIN_UNITS = {"mm", "cm", "in"}
 SNOW_UNITS = RAIN_UNITS
 TEMP_UNITS = {"c", "f", "k"}
-WIND_UNITS = {"fsec", "msec", "mph", "kmh"}
+WIND_UNITS = {"fsec", "msec", "mph", "kmh", "knot"}
 
 # Conversion factors
 FT_FROM_METER = 3.28084
 IN_FROM_MM = 0.0393701
 KMH_FROM_MSEC = 0.277778
 MPH_FROM_MSEC = 2.23694
+KNOT_FROM_MSEC = 1.94384
 
 # Thresholds options
 THRESHOLDS_ALL = "all"
@@ -360,6 +361,27 @@ class Py3status:
                     "new": "format_forecast_separator",
                     "msg": "obsolete parameter, use format_forecast_separator",
                 }
+            ],
+        }
+
+        update_config = {
+            "update_placeholder_format": [
+                {
+                    "placeholder_formats": {"amount": ":.2f"},
+                    "format_strings": ["format_rain", "format_snow"],
+                },
+                {
+                    "placeholder_formats": {
+                        "max": ":.1f",
+                        "min": ":.1f",
+                        "current": ":.1f",
+                    },
+                    "format_strings": ["format_temperature"],
+                },
+                {
+                    "placeholder_formats": {"speed": ":.1f", "gust": ":.1f"},
+                    "format_strings": ["format_wind"],
+                },
             ],
         }
 
@@ -556,12 +578,9 @@ class Py3status:
         inches = rain * IN_FROM_MM
 
         options = {
-            "mm": round(rain),
-            "cm": round(rain / 10),
-            "m": round(rain / 100),
-            "in": round(inches),
-            "ft": round(inches / 12),
-            "yd": round(inches / 36),
+            "mm": rain,
+            "cm": rain / 10,
+            "in": inches,
         }
 
         # Format the rain fall
@@ -582,12 +601,9 @@ class Py3status:
         inches = snow * IN_FROM_MM
 
         options = {
-            "mm": round(snow),
-            "cm": round(snow / 10),
-            "m": round(snow / 100),
-            "in": round(inches),
-            "ft": round(inches / 12),
-            "yd": round(inches / 36),
+            "mm": snow,
+            "cm": snow / 10,
+            "in": inches,
         }
 
         # Format the snow fall
@@ -620,6 +636,10 @@ class Py3status:
             "kmh": {
                 "speed": msec_speed * KMH_FROM_MSEC,
                 "gust": msec_gust * KMH_FROM_MSEC,
+            },
+            "knot": {
+                "speed": msec_speed * KNOT_FROM_MSEC,
+                "gust": msec_gust * KNOT_FROM_MSEC,
             },
         }
 
@@ -683,19 +703,19 @@ class Py3status:
 
         options = {
             "c": {
-                "current": round(kToC(kelvin["temp"])),
-                "max": round(kToC(kelvin["temp_max"])),
-                "min": round(kToC(kelvin["temp_min"])),
+                "current": kToC(kelvin["temp"]),
+                "max": kToC(kelvin["temp_max"]),
+                "min": kToC(kelvin["temp_min"]),
             },
             "f": {
-                "current": round(kToF(kelvin["temp"])),
-                "max": round(kToF(kelvin["temp_max"])),
-                "min": round(kToF(kelvin["temp_min"])),
+                "current": kToF(kelvin["temp"]),
+                "max": kToF(kelvin["temp_max"]),
+                "min": kToF(kelvin["temp_min"]),
             },
             "k": {
-                "current": round(kelvin["temp"]),
-                "max": round(kelvin["temp_max"]),
-                "min": round(kelvin["temp_min"]),
+                "current": kelvin["temp"],
+                "max": kelvin["temp_max"],
+                "min": kelvin["temp_min"],
             },
         }
 
@@ -802,49 +822,42 @@ if __name__ == "__main__":
     """
     Run module in test mode.
     """
-    import os
+    from os import getenv
     from py3status.module_test import module_test
 
-    # All possible outputs
-    all_string = "/".join(
-        [
-            "{clouds}",
-            "{description}",
-            "{main}",
-            "{humidity}",
-            "{pressure}",
-            "{snow}",
-            "{sunrise}",
-            "{sunset}",
-            "{temperature}",
-            "{wind}",
-        ]
-    )
+    def colorize(names, color="lightgreen", separator=None):
+        if separator is None:
+            separator = "[\?color={c}&show  / ]".format(c=color)
+        body = "[\?color={c}&show {n}] [\?color={n} {{{n}}}]"
+        return separator.join([body.format(c=color, n=name) for name in names])
 
-    module_test(
-        Py3status,
-        config={
-            "api_key": os.getenv("OWM_API_KEY"),
-            # Select icons
-            "icons": {"200": "☔", "230_232": "🌧"},
-            # Complete configuration
-            "format_clouds": "{icon} {coverage}%",
-            "format_humidity": "{icon} {humidity}%",
-            "format_pressure": "{icon} {pressure} Pa, sea: {sea_level} Pa",
-            "format_rain": "{icon} {amount:.0f} in",
-            "format_snow": "{icon} {amount:.0f} in",
-            "format_temperature": (
-                r"{icon}: max: [\?color=max {max:.0f}°F], "
-                r"min: [\?color=min {min:.0f}°F], "
-                r"current: [\?color=current {current:.0f}°F]"
-            ),
-            "format_wind": (
-                "{icon} {degree}°, gust: {gust:.0f} mph, " "speed: {speed:.0f} mph"
-            ),
-            "format": ("{city}, {country}: {icon} " + all_string + "//{forecast}"),
-            "format_forecast": ("{icon} " + all_string),
-            # Miscellaneous
-            "forecast_days": 1,
-            "format_forecast_separator": "//",
-        },
-    )
+    # fmt: off
+    weather_placeholders = [
+        "icon", "clouds", "description", "humidity", "main", "pressure", "rain",
+        "snow", "sunrise", "sunset", "temperature", "wind",
+    ]
+    format_placeholders = ["city", "country"] + weather_placeholders + ["forecast"]
+    # fmt: on
+
+    config = {
+        # Miscellaneous
+        "api_key": getenv("OWM_API_KEY"),
+        "icons": {"200": "☔", "230_232": "🌧"},
+        "format_forecast_separator": "\?color=tomato  separator ",
+        "forecast_days": 1,
+        # Format
+        "format": colorize(format_placeholders, "lightblue"),
+        "format_forecast": colorize(weather_placeholders, "pink"),
+        # Weather
+        "format_clouds": colorize(["icon", "coverage"]),
+        "format_humidity": colorize(["icon", "humidity"]),
+        "format_pressure": colorize(["icon", "pressure", "sea_level"]),
+        "format_rain": colorize(["icon", "amount", "unit"]),
+        "format_snow": colorize(["icon", "amount", "unit"]),
+        "format_temperature": colorize(["icon", "max", "min", "current", "unit"]),
+        "format_wind": colorize(
+            ["icon", "degree", "direction", "gust", "speed", "unit"]
+        ),
+    }
+
+    module_test(Py3status, config)
