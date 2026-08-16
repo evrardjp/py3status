@@ -24,12 +24,12 @@ SAMPLE OUTPUT
 down
 {'color': '#FF0000', 'full_text': u'localhost:22 DOWN'}
 """
+
 import socket
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     cache_timeout = 10
@@ -45,7 +45,12 @@ class Py3status:
 
     def check_tcp(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        result = sock.connect_ex((self.host, self.port))
+
+        try:
+            result = sock.connect_ex((self.host, self.port))
+        except socket.gaierror:
+            sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+            result = sock.connect_ex((self.host, self.port))
 
         if result:
             color = self.color_off

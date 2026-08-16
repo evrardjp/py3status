@@ -1,12 +1,14 @@
+import logging
 import select
 import sys
-
-from threading import Thread
-from subprocess import Popen, PIPE
 from json import loads
 from shlex import quote as shell_quote
+from subprocess import PIPE, Popen
+from threading import Thread
 
 from py3status.profiling import profile
+
+logger = logging.getLogger(__name__)
 
 
 class IOPoller:
@@ -31,11 +33,13 @@ class IOPoller:
         poll_result = self.poller.poll(timeout)
         if poll_result:
             line = self.io.readline().strip()
-            if self.io == sys.stdin and line == "[":
+            # when using pydev.debugger sys.stdin gets overwritten and placed
+            # into sys.stdin.original_stdin issue #2090
+            if self.io == getattr(sys.stdin, "original_stdin", sys.stdin) and line == "[":
                 # skip first event line wrt issue #19
                 line = self.io.readline().strip()
             try:
-                # python3 compatibility code
+                # decode bytes input when needed
                 line = line.decode()
             except (AttributeError, UnicodeDecodeError):
                 pass
@@ -56,9 +60,7 @@ class EventTask:
         self.event = event
 
     def run(self):
-        self.events_thread.process_event(
-            self.module_full_name, self.event, self.default_event
-        )
+        self.events_thread.process_event(self.module_full_name, self.event, self.default_event)
 
 
 class EventClickTask:
@@ -73,9 +75,7 @@ class EventClickTask:
         self.event = event
 
     def run(self):
-        self.events_thread.on_click_dispatcher(
-            self.module_name, self.event, self.command
-        )
+        self.events_thread.on_click_dispatcher(self.module_name, self.event, self.command)
 
 
 class Events(Thread):
@@ -121,7 +121,7 @@ class Events(Thread):
             partial_text = partial["full_text"]
         else:
             partial_text = full_text
-        return full_text, partial_text
+        return (x.strip() for x in (full_text, partial_text))
 
     def on_click_dispatcher(self, module_name, event, command):
         """
@@ -155,10 +155,12 @@ class Events(Thread):
         """
         wm_msg = self.config["wm"]["msg"]
         pipe = Popen([wm_msg, command], stdout=PIPE)
-        self.py3_wrapper.log(
-            '{} module="{}" command="{}" stdout={}'.format(
-                wm_msg, module_name, command, pipe.stdout.read()
-            )
+        logger.info(
+            '%s module="%s" command="%s" stdout=%s',
+            wm_msg,
+            module_name,
+            command,
+            pipe.stdout.read(),
         )
 
     def process_event(self, module_name, event, default_event=False):
@@ -174,9 +176,8 @@ class Events(Thread):
         # if module is a py3status one call it.
         if module_info["type"] == "py3status":
             module = module_info["module"]
+            logger.debug("dispatching event %s", event)
             module.click_event(event)
-            if self.config["debug"]:
-                self.py3_wrapper.log(f"dispatching event {event}")
 
             # to make the bar more responsive to users we refresh the module
             # unless the on_click event called py3.prevent_refresh()
@@ -186,8 +187,7 @@ class Events(Thread):
 
         if default_event:
             # default button 2 action is to clear this method's cache
-            if self.config["debug"]:
-                self.py3_wrapper.log(f"dispatching default event {event}")
+            logger.debug("dispatching default event %s", event)
             self.py3_wrapper.refresh_modules(module_name)
 
         # find container that holds the module and call its onclick
@@ -201,8 +201,7 @@ class Events(Thread):
         Takes an event dict.  Logs the event if needed and cleans up the dict
         such as setting the index needed for composits.
         """
-        if self.config["debug"]:
-            self.py3_wrapper.log(f"received event {event}")
+        logger.debug("received event %s", event)
 
         # usage variables
         event["index"] = event.get("index", "")
@@ -221,13 +220,6 @@ class Events(Thread):
                 pass
             event["index"] = index
             event["instance"] = instance
-
-        if self.config["debug"]:
-            self.py3_wrapper.log(
-                'trying to dispatch event to module "{}"'.format(
-                    f"{name} {instance}".strip()
-                )
-            )
 
         # guess the module config name
         module_name = f"{name} {instance}".strip()
@@ -267,7 +259,7 @@ class Events(Thread):
         """
         try:
             while self.py3_wrapper.running:
-                event_str = self.poller_inp.readline()
+                event_str = self.poller_inp.readline(timeout=None)
                 if not event_str:
                     continue
                 try:
@@ -277,8 +269,8 @@ class Events(Thread):
                     event = loads(event_str)
                     self.dispatch_event(event)
                 except Exception:
-                    self.py3_wrapper.report_exception("Event failed")
+                    self.py3_wrapper.report_exception("event failed")
         except:  # noqa e722
-            err = "Events thread died, click events are disabled."
+            err = "events thread died, click events are disabled"
             self.py3_wrapper.report_exception(err, notify_user=False)
             self.py3_wrapper.notify_user(err, level="warning")

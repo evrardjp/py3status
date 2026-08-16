@@ -27,12 +27,11 @@ off
 {'color': '#FF0000', 'full_text': u'\u25a0'}
 """
 
-from urllib.request import urlopen, URLError
+from urllib.request import URLError, urlopen
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     cache_timeout = 10

@@ -198,20 +198,16 @@ orange_gold
 ]
 """
 
-from os import getloadavg
 from multiprocessing import cpu_count
+from os import getloadavg
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     cache_timeout = 5
-    format = (
-        r"Loadavg [\?color=1avg {1min}] "
-        r"[\?color=5avg {5min}] [\?color=15avg {15min}]"
-    )
+    format = r"Loadavg [\?color=1avg {1min}] " r"[\?color=5avg {5min}] [\?color=15avg {15min}]"
     thresholds = [
         (0, "#9dd7fb"),
         (20, "good"),

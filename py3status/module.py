@@ -1,16 +1,18 @@
 import inspect
+import logging
 import time
-
 from collections import OrderedDict
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
 from random import randint
+from types import FunctionType
 
 from py3status.composite import Composite
 from py3status.constants import MARKUP_LANGUAGES, ON_ERROR_VALUES, POSITIONS
-from py3status.py3 import Py3, ModuleErrorException
-from py3status.profiling import profile
 from py3status.formatter import Formatter
+from py3status.log import module_logger_name
+from py3status.profiling import profile
+from py3status.py3 import ModuleErrorException, Py3
 
 
 def make_quotes(options):
@@ -31,7 +33,7 @@ class Module:
     PARAMS_LEGACY = "legacy"
     EXPECTED_CLASS = "Py3status"
 
-    def __init__(self, module, user_modules, py3_wrapper, instance=None):
+    def __init__(self, module, discoverable_modules, py3_wrapper, instance=None):
         """
         We need quite some stuff to occupy ourselves don't we ?
         """
@@ -74,8 +76,12 @@ class Module:
         # should only use it on the understanding that it is not supported.
         self._py3_wrapper = py3_wrapper
 
+        # create namespaced module identity for consistent formatting/filtering
+        self.module_logger_name = module_logger_name(self.module_full_name)
+        self._logger = logging.getLogger(self.module_logger_name)
+
         try:
-            self.load_methods(module, user_modules)
+            self.load_methods(module, discoverable_modules)
         except Exception as e:
             # Import failed notify user in module error output
             self.disabled = True
@@ -87,15 +93,15 @@ class Module:
             ]
             self.error_output(self.error_messages[0])
             # log the error
-            msg = f"Module `{self.module_full_name}` could not be loaded ({e})"
             if isinstance(e, SyntaxError):
                 # provide full traceback
-                self._py3_wrapper.report_exception(msg, notify_user=False)
+                self._py3_wrapper.report_exception(
+                    "could not be loaded", notify_user=False, name=self.module_logger_name
+                )
             else:
                 # module import error we can just report the module that cannot
                 # be imported
-                self._py3_wrapper.log(msg)
-                self._py3_wrapper.log(str(e))
+                self._logger.error("could not be loaded (%s)", e)
 
         # check module/py3status config section
         if not self.disabled:
@@ -149,14 +155,13 @@ class Module:
 
                 self.error_messages = [
                     self.module_nice_name,
-                    "{}: {}".format(
-                        self.module_nice_name, str(e) or e.__class__.__name__
-                    ),
+                    f"{e}",
                 ]
-                self.runtime_error(self.error_messages[0], "post_config_hook")
-                msg = f"Exception in `{self.module_full_name}` post_config_hook()"
-                self._py3_wrapper.report_exception(msg, notify_user=False)
-                self._py3_wrapper.log(f"terminating module {self.module_full_name}")
+                self.runtime_error(self.error_messages[1], "post_config_hook")
+                self._py3_wrapper.report_exception(
+                    "post_config_hook failed", notify_user=False, name=self.module_logger_name
+                )
+                self._logger.error("terminating module")
         self.enabled = True
 
     def runtime_error(self, msg, method):
@@ -174,7 +179,7 @@ class Module:
         # only show first line of error
         msg = msg.splitlines()[0]
 
-        errors = [self.module_nice_name, f"{self.module_nice_name}: {msg}"]
+        errors = [self.module_nice_name, f"{self.module_nice_name}[{method}]: {msg}"]
 
         # if we have shown this error then keep in the same state
         if self.error_messages != errors:
@@ -201,7 +206,11 @@ class Module:
             "name": self.module_name,
         }
         for method in self.methods.values():
-            if method_affected and method["method"] != method_affected:
+            if (
+                method_affected
+                and method["method"] != method_affected
+                and method_affected != "post_config_hook"
+            ):
                 continue
 
             method["last_output"] = [error]
@@ -227,7 +236,7 @@ class Module:
         self.prepare_module()
         if not (self.disabled or self.terminated):
             # Start the module and call its output method(s)
-            self._py3_wrapper.log(f"starting module {self.module_full_name}")
+            self._logger.info("starting module")
             self._py3_wrapper.timeout_queue_add(self)
 
     def force_update(self):
@@ -238,9 +247,11 @@ class Module:
             return
         # clear cached_until for each method to allow update
         for meth, my_method in self.methods.items():
-            my_method["cached_until"] = time.perf_counter()
-            if self.config["debug"]:
-                self._py3_wrapper.log(f"clearing cache for method {meth}")
+            my_method["cached_until"] = time.monotonic()
+            self._logger.debug(
+                "clearing cache for method '%s'",
+                meth,
+            )
         # set module to update
         self._py3_wrapper.timeout_queue_add(self)
 
@@ -253,7 +264,7 @@ class Module:
         # purge from any container modules
         self._py3_wrapper.purge_module(self.module_full_name)
         self.error_output("")
-        self._py3_wrapper.log(f"disabling module `{self.module_full_name}`")
+        self._logger.info("disabling module")
 
     def wake(self):
         self.sleeping = False
@@ -337,11 +348,17 @@ class Module:
 
         separator = fn(self.module_full_name, "separator")
         if not hasattr(separator, "none_setting"):
-            if not isinstance(separator, bool):
-                err = "Invalid `separator` attribute, should be a boolean. "
-                err += f"Got `{separator}`."
-                raise TypeError(err)
-            self.i3bar_module_options["separator"] = separator
+            # HACK: separator is a valid setting in the general section
+            # of the configuration. but it's a string, not a boolean.
+            # revisit how i3status and py3status differ in this regard.
+            # if not isinstance(separator, bool):
+
+            #     err = "Invalid `separator` attribute, should be a boolean. "
+            #     err += f"Got `{separator}`."
+            #     raise TypeError(err)
+            # self.i3bar_module_options["separator"] = separator
+            if isinstance(separator, bool):
+                self.i3bar_module_options["separator"] = separator
 
         separator_block_width = fn(self.module_full_name, "separator_block_width")
         if not hasattr(separator_block_width, "none_setting"):
@@ -536,9 +553,7 @@ class Module:
 
             # padding
             if left:
-                response["composite"][0]["full_text"] = (
-                    left + response["composite"][0]["full_text"]
-                )
+                response["composite"][0]["full_text"] = left + response["composite"][0]["full_text"]
             if right:
                 response["composite"][-1]["full_text"] += right
 
@@ -574,7 +589,7 @@ class Module:
         else:
             return self.PARAMS_LEGACY
 
-    def load_methods(self, module, user_modules):
+    def load_methods(self, module, discoverable_modules):
         """
         Read the given user-written py3status class file and store its methods.
         Those methods will be executed, so we will deliberately ignore:
@@ -585,23 +600,45 @@ class Module:
         """
         if not self.module_class:
             # user provided modules take precedence over py3status provided modules
-            if self.module_name in user_modules:
-                include_path, f_name = user_modules[self.module_name]
+            if self.module_name in discoverable_modules:
+                include_path, f_name = discoverable_modules[self.module_name]
                 module_path = Path(include_path) / f_name
-                self._py3_wrapper.log(f'loading module "{module}" from {module_path}')
+                self._logger.info(
+                    "loading module from path-included:%s",
+                    module_path,
+                )
                 self.module_class = self.load_from_file(module_path)
             # load from py3status provided modules
             else:
-                self._py3_wrapper.log(
-                    'loading module "{}" from py3status.modules.{}'.format(
-                        module, self.module_name
-                    )
+                try:
+                    self.module_class = self.load_from_namespace(self.module_name)
+                except ModuleNotFoundError as err:
+                    module_namespace = f"py3status.modules.{self.module_name}"
+                    if err.name == module_namespace:
+                        entry_point_modules = sorted(
+                            name
+                            for name, module_info in self._py3_wrapper.get_discoverable_modules().items()
+                            if module_info[0] == "entry_point"
+                        )
+                        if entry_point_modules:
+                            raise ModuleNotFoundError(
+                                f"module '{self.module_name}' not found"
+                            ) from err
+                    raise
+                self._logger.info(
+                    "loading module from py3status.modules.%s",
+                    self.module_name,
                 )
-                self.module_class = self.load_from_namespace(self.module_name)
+        elif self.module_name in discoverable_modules:
+            source, class_inst = discoverable_modules[self.module_name]
+            if source == "entry_point":
+                self._logger.info(
+                    "loading module from entry-point:%s",
+                    class_inst.__module__,
+                )
 
         class_inst = self.module_class
         if class_inst:
-
             try:
                 # containers have items attribute set to a list of contained
                 # module instance names.  If there are no contained items then
@@ -659,10 +696,8 @@ class Module:
                         param = item.get("param")
                         if param:
                             msg = f"`{param}` {msg}"
-                        msg = "DEPRECATION WARNING: {} {}".format(
-                            self.module_full_name, msg
-                        )
-                        self._py3_wrapper.log(msg)
+                        msg = "DEPRECATION WARNING: {} {}".format(self.module_full_name, msg)
+                        self._logger.info(msg)
 
                 if "rename" in deprecated:
                     # renamed parameters
@@ -695,9 +730,7 @@ class Module:
                             format_string = mod_config.get(format_param)
                             if not format_string:
                                 continue
-                            format = Formatter().update_placeholders(
-                                format_string, placeholders
-                            )
+                            format = Formatter().update_placeholders(format_string, placeholders)
                             mod_config[format_param] = format
 
                 if "update_placeholder_format" in deprecated:
@@ -723,10 +756,7 @@ class Module:
                         substitute = item["substitute"]
                         substitute_param = substitute["param"]
                         substitute_value = substitute["value"]
-                        if (
-                            mod_config.get(param) == value
-                            and substitute_param not in mod_config
-                        ):
+                        if mod_config.get(param) == value and substitute_param not in mod_config:
                             mod_config[substitute_param] = substitute_value
                             deprecation_log(item)
                 if "function" in deprecated:
@@ -845,8 +875,8 @@ class Module:
                 if method.startswith("_"):
                     continue
                 else:
-                    m_type = type(getattr(class_inst, method))
-                    if "method" in str(m_type):
+                    m_attr = inspect.getattr_static(class_inst, method)
+                    if isinstance(m_attr, FunctionType):
                         params_type = self._params_type(method, class_inst)
                         if method == "on_click":
                             self.click_events = params_type
@@ -858,7 +888,7 @@ class Module:
                             # the method_obj stores infos about each method
                             # of this module.
                             method_obj = {
-                                "cached_until": time.perf_counter(),
+                                "cached_until": time.monotonic(),
                                 "call_type": params_type,
                                 "instance": None,
                                 "last_output": {"name": method, "full_text": ""},
@@ -868,12 +898,12 @@ class Module:
                             self.methods[method] = method_obj
 
         # done, log some debug info
-        if self.config["debug"]:
-            self._py3_wrapper.log(
-                'module "{}" click_events={} has_kill={} methods={}'.format(
-                    module, self.click_events, self.has_kill, list(self.methods)
-                )
-            )
+        self._logger.debug(
+            "click_events=%s has_kill=%s methods=%s",
+            self.click_events,
+            self.has_kill,
+            list(self.methods),
+        )
 
     def click_event(self, event):
         """
@@ -914,8 +944,10 @@ class Module:
                 # nothing has happened so no need for refresh
                 self.prevent_refresh = True
         except Exception:
-            msg = f"on_click event in `{self.module_full_name}` failed"
-            self._py3_wrapper.report_exception(msg)
+            self._py3_wrapper.report_exception(
+                "on_click event failed",
+                name=self.module_logger_name,
+            )
 
     @profile
     def run(self):
@@ -929,13 +961,12 @@ class Module:
             cache_time = None
             # execute each method of this module
             for meth, my_method in self.methods.items():
-
                 # always check py3status is running
                 if not self._py3_wrapper.running:
                     break
 
                 # respect the cache set for this method
-                if time.perf_counter() < my_method["cached_until"]:
+                if time.monotonic() < my_method["cached_until"]:
                     if not cache_time or my_method["cached_until"] < cache_time:
                         cache_time = my_method["cached_until"]
                     continue
@@ -1013,8 +1044,11 @@ class Module:
                         my_method["last_output"] = result
 
                     # debug info
-                    if self.config["debug"]:
-                        self._py3_wrapper.log(f"method {meth} returned {result} ")
+                    self._logger.debug(
+                        "method '%s' returned %s",
+                        meth,
+                        result,
+                    )
                     # module working correctly so ensure module works as
                     # expected
                     self.allow_config_clicks = True
@@ -1031,35 +1065,38 @@ class Module:
                         if e.timeout is Py3.CACHE_FOREVER:
                             cache_time = Py3.CACHE_FOREVER
                         else:
-                            cache_time = time.perf_counter() + e.timeout
+                            cache_time = time.monotonic() + e.timeout
                     else:
-                        cache_time = time.perf_counter() + getattr(
+                        cache_time = time.monotonic() + getattr(
                             self.module_class,
                             "cache_timeout",
                             self.config["cache_timeout"],
                         )
 
                 except Exception as e:
-                    msg = "Instance `{}`, user method `{}` failed"
-                    msg = msg.format(self.module_full_name, meth)
                     if not self.testing:
-                        self._py3_wrapper.report_exception(msg, notify_user=False)
+                        self._py3_wrapper.report_exception(
+                            f"user method '{meth}' failed",
+                            notify_user=False,
+                            name=self.module_logger_name,
+                        )
                     # added error
                     self.runtime_error(str(e) or e.__class__.__name__, meth)
-                    cache_time = time.perf_counter() + getattr(
+                    cache_time = time.monotonic() + getattr(
                         self.module_class, "cache_timeout", self.config["cache_timeout"]
                     )
 
             if cache_time is None:
-                cache_time = time.perf_counter() + self.config["cache_timeout"]
+                cache_time = time.monotonic() + self.config["cache_timeout"]
             self.cache_time = cache_time
             # new style modules can signal they want to cache forever
             if cache_time == Py3.CACHE_FOREVER:
+                self._py3_wrapper.clear_timeout_due(self)
                 return
             # don't be hasty mate
             # set timeout to do update next time one is needed
             if not cache_time:
-                cache_time = time.perf_counter() + self.config["minimum_interval"]
+                cache_time = time.monotonic() + self.config["minimum_interval"]
 
             self._py3_wrapper.timeout_queue_add(self, cache_time)
 

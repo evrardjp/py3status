@@ -1,26 +1,24 @@
 import os
 import re
-
 from collections import OrderedDict
 from importlib import util
 from pathlib import Path
 from string import Template
-from subprocess import check_output, CalledProcessError
+from subprocess import CalledProcessError, TimeoutExpired, check_output
 
 from py3status.constants import (
     CONFIG_FILE_SPECIAL_SECTIONS,
-    I3S_SINGLE_NAMES,
-    I3S_MODULE_NAMES,
-    MAX_NESTING_LEVELS,
     ERROR_CONFIG,
     GENERAL_DEFAULTS,
+    I3S_MODULE_NAMES,
+    I3S_SINGLE_NAMES,
+    MAX_NESTING_LEVELS,
     RETIRED_MODULES,
-    TIME_MODULES,
     TIME_FORMAT,
+    TIME_MODULES,
     TZTIME_FORMAT,
 )
-
-from py3status.private import PrivateHide, PrivateBase64
+from py3status.private import PrivateBase64, PrivateHide
 
 
 class ParseException(Exception):
@@ -40,9 +38,7 @@ class ParseException(Exception):
     def one_line(self, config_path):
         filename = config_path.name
         notif = "CONFIG ERROR: {} saw `{}` at line {} position {} in file {}"
-        return notif.format(
-            self.error, self.token, self.line_no, self.position, filename
-        )
+        return notif.format(self.error, self.token, self.line_no, self.position, filename)
 
     def __str__(self):
         marker = " " * (self.position - 1) + "^"
@@ -253,9 +249,7 @@ class ConfigParser:
                 t_type = "unknown"
             else:
                 continue
-            tokens.append(
-                {"type": t_type, "value": value, "match": token, "start": token.start()}
-            )
+            tokens.append({"type": t_type, "value": value, "match": token, "start": token.start()})
         self.tokens = tokens
 
     def next(self):
@@ -289,10 +283,10 @@ class ConfigParser:
             return value[1:-1].replace("\\'", "'")
         return value
 
-    def unicode_escape_sequence_fix(self, value):
+    def escape_sequence_fix(self, value):
         """
-        It is possible to define unicode characters in the config either as the
-        actual utf-8 character or using escape sequences the following all will
+        It is possible to define Unicode characters in the config either as the
+        actual UTF-8 character or using escape sequences. The following all will
         show the Greek delta character.
         Δ \N{GREEK CAPITAL LETTER DELTA} \U00000394  \u0394
         """
@@ -309,8 +303,8 @@ class ConfigParser:
         """
         Converts to actual value, or remains as string.
         """
-        # ensure any escape sequences are converted to unicode
-        value = self.unicode_escape_sequence_fix(value)
+        # ensure any escape sequences are converted to text
+        value = self.escape_sequence_fix(value)
 
         if value and value[0] in ['"', "'"]:
             return self.remove_quotes(value)
@@ -393,9 +387,7 @@ class ConfigParser:
                 value = False
             else:
                 if self.py3_wrapper:
-                    self.py3_wrapper.report_exception(
-                        msg=f"shell: called with command `{param}`"
-                    )
+                    self.py3_wrapper.report_exception(msg=f"shell: called with command `{param}`")
                 self.notify_user("shell script exited with an error")
                 value = None
         else:
@@ -403,7 +395,7 @@ class ConfigParser:
             if value_type == "bool":
                 value = True
             else:
-                # convert bytes to unicode
+                # convert bytes to text
                 value = value.decode("utf-8")
                 value = self.value_convert(value, value_type)
         return value
@@ -567,14 +559,13 @@ class ConfigParser:
         # if we have a colon in the name of a setting then it
         # indicates that it has been encoded.
         if ":" in name:
-
             if module_name.split(" ")[0] in I3S_MODULE_NAMES + ["general"]:
                 self.error("Only py3status modules can use obfuscated")
 
-            if type(value).__name__ not in ["str", "unicode"]:
+            if not isinstance(value, str):
                 self.error("Only strings can be obfuscated")
 
-            (name, scheme) = name.split(":")
+            name, scheme = name.split(":")
             if scheme == "base64":
                 value = PrivateBase64(value, module_name)
             elif scheme == "hide":
@@ -641,20 +632,14 @@ class ConfigParser:
                     # no instance name then give it an anon one.  This allows
                     # us to have multiple non-instance named modules defined
                     # without them clashing.
-                    if (
-                        self.level > 1
-                        and " " not in name
-                        and name not in I3S_MODULE_NAMES
-                    ):
+                    if self.level > 1 and " " not in name and name not in I3S_MODULE_NAMES:
                         name = f"{name} _anon_module_{self.anon_count}"
                         self.anon_count += 1
                     dictionary[name] = value
                 # assignment of value
                 elif t_value == "=":
                     try:
-                        name, value = self.process_value(
-                            name, value, self.current_module[-1]
-                        )
+                        name, value = self.process_value(name, value, self.current_module[-1])
                     except IndexError:
                         self.error("Missing {", previous=True)
                     dictionary[name] = value
@@ -700,33 +685,44 @@ def process_config(config_path, py3_wrapper=None):
         error_config = Template(ERROR_CONFIG).substitute(error=error)
         return parse_config(error_config)
 
-    config = {}
-
-    # get the file encoding this is important with multi-byte unicode chars
-    try:
-        encoding = check_output(
-            ["file", "-b", "--mime-encoding", "--dereference", config_path]
-        )
-        encoding = encoding.strip().decode("utf-8")
-    except FileNotFoundError:
-        # can be missing on NixOS (see #1961)
-        notify_user("the 'file' command is missing, please install it.")
-        encoding = "utf-8"
-    except CalledProcessError:
-        # bsd does not have the --mime-encoding so assume utf-8
-        encoding = "utf-8"
-    try:
+    def load_config(encoding=None):
         with config_path.open("r", encoding=encoding) as f:
             try:
-                config_info = parse_config(f)
+                return parse_config(f)
             except ParseException as e:
-                config_info = parse_config_error(e, config_path)
-    except LookupError:
-        with config_path.open() as f:
-            try:
-                config_info = parse_config(f)
-            except ParseException as e:
-                config_info = parse_config_error(e, config_path)
+                return parse_config_error(e, config_path)
+
+    def get_encoding(encoding):
+        if not encoding:
+            return None
+        encoding = encoding.lower()
+        if encoding in ["binary", "unknown-8bit"]:
+            return None
+        if encoding in ["utf-16le", "utf-16be", "utf-32le", "utf-32be"]:
+            return encoding[:-2]
+        return encoding
+
+    # get the file encoding. this is important with multi-byte characters
+    try:
+        config_info = load_config("utf-8-sig")
+    except UnicodeDecodeError:
+        try:
+            # detect config encoding only if utf-8 decoding fails
+            cmd = ["file", "-b", "--mime-encoding", "--dereference", config_path]
+            encoding = get_encoding(check_output(cmd, timeout=3).strip().decode("utf-8"))
+        except FileNotFoundError:
+            # can be missing on NixOS (see #1961)
+            notify_user("the 'file' command is missing, please install it.")
+            encoding = None
+        except (CalledProcessError, TimeoutExpired):
+            encoding = None
+            # timeout can occur on some architectures where the magic
+            # database takes too long to load. and bsd does not have
+            # the --mime-encoding so we cannot determine the encoding.
+        config_info = load_config(encoding)
+
+    # the beginning of something beautiful
+    config = {}
 
     # update general section with defaults
     general_defaults = GENERAL_DEFAULTS.copy()
@@ -879,8 +875,8 @@ def process_config(config_path, py3_wrapper=None):
 if __name__ == "__main__":
     # process a config file and display output
     # file name user supplied or ~/.i3/i3status.conf
-    import sys
     import pprint
+    import sys
 
     if len(sys.argv) > 1:
         file_name = sys.argv[1]

@@ -31,14 +31,13 @@ off
 """
 
 from os import setpgrp
-from subprocess import Popen, PIPE
+from subprocess import PIPE, Popen
 
 STRING_UNAVAILABLE = "not installed"
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     button_activate = 3

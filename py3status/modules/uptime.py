@@ -61,14 +61,13 @@ SAMPLE OUTPUT
 """
 
 import time
-from datetime import datetime
 from collections import OrderedDict
+from datetime import datetime
 from pathlib import Path
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     format = "up {days} days {hours} hours {minutes} minutes"

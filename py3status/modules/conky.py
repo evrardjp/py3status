@@ -322,19 +322,19 @@ bar
 ]
 """
 
-from subprocess import Popen, PIPE, STDOUT
-from threading import Thread
-from tempfile import NamedTemporaryFile
+from contextlib import suppress
 from json import dumps
 from pathlib import Path
+from subprocess import PIPE, STDOUT, Popen, TimeoutExpired
+from tempfile import NamedTemporaryFile
+from threading import Thread
 
 STRING_NOT_INSTALLED = "not installed"
 STRING_MISSING_FORMAT = "missing format"
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     config = {}
@@ -364,44 +364,108 @@ class Py3status:
         self.config.update({"out_to_x": False, "out_to_console": True})
         self.separator = "|SEPARATOR|"  # must be upper
 
-        # make an output.
+        # make an output
         config = dumps(self.config, separators=(",", "=")).replace('"', "")
         text = self.separator.join([f"${{{x}}}" for x in conky_placeholders])
         tmp = f"conky.config = {config}\nconky.text = [[{text}]]"
 
         # write tmp output to '/tmp/py3status-conky_*', make a command
-        self.tmpfile = NamedTemporaryFile(
-            prefix="py3status_conky-", suffix=".conf", delete=False
-        )
+        try:
+            # python 3.12+
+            self.tmpfile = NamedTemporaryFile(
+                prefix="py3status_conky-", suffix=".conf", delete_on_close=False
+            )
+        except TypeError:
+            self.tmpfile = NamedTemporaryFile(
+                prefix="py3status_conky-", suffix=".conf", delete=False
+            )
         self.tmpfile.write(str.encode(tmp))
         self.tmpfile.close()
         self.conky_command = f"conky -c {self.tmpfile.name}".split()
+
+        # skip invalid conky errors
+        self.ignored_conky_outputs = [
+            "invalid setting of type 'table'",
+            "FOUND:",
+            "session running",
+        ]
 
         # thread
         self.line = ""
         self.error = None
         self.process = None
+        self.running = True
         self.t = Thread(target=self._start_loop)
         self.t.daemon = True
         self.t.start()
 
+    def _set_error(self, error, returncode=None):
+        error = str(error).strip().removeprefix("conky").strip(" .:")
+        if not error:
+            if returncode is None:
+                error = "stopped unexpectedly"
+            elif returncode < 0:
+                error = f"exiting due to signal {-returncode}"
+            else:
+                error = f"exiting due to code {returncode}"
+        self.error = error
+        self.py3.log(self.error, self.py3.LOG_ERROR)
+
     def _cleanup(self):
-        self.process.kill()
-        Path(self.tmpfile).unlink()
+        self.running = False
+        if self.process and self.process.poll() is None:
+            self.process.kill()
+        with suppress(FileNotFoundError):
+            Path(self.tmpfile.name).unlink()
         self.py3.update()
+
+    def _ignore_conky_diagnostic(self, line):
+        returncode = self.process.poll()
+        if any(x in line for x in self.ignored_conky_outputs):
+            if returncode is None:
+                return True
+            line = ""
+        elif returncode is None:
+            self.process.kill()
+            returncode = self.process.wait()
+        if self.running:
+            self._set_error(line, returncode)
+        return False
 
     def _start_loop(self):
         try:
-            self.process = Popen(self.conky_command, stdout=PIPE, stderr=STDOUT)
-            while True:
-                line = self.process.stdout.readline().decode()
-                if self.process.poll() is not None or "conky:" in line:
-                    raise Exception(line)
+            self.process = Popen(
+                self.conky_command,
+                stdout=PIPE,
+                stderr=STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            while self.running:
+                line = self.process.stdout.readline()
+                # check eof before processing so blank lines
+                # do not look like process exit
+                if not line:
+                    try:
+                        returncode = self.process.wait(timeout=0.1)
+                    except TimeoutExpired:
+                        returncode = None
+                    if self.running:
+                        self._set_error(line, returncode)
+                    break
+                # conky writes diagnostics to the output stream too
+                if line.startswith("conky:"):
+                    if self._ignore_conky_diagnostic(line):
+                        continue
+                    break
+                # refresh when conky changed data
                 if self.line != line:
                     self.line = line
                     self.py3.update()
         except Exception as err:
-            self.error = " ".join(format(err).split()[1:])
+            if self.running:
+                self._set_error(err)
         finally:
             self._cleanup()
 

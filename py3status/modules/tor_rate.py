@@ -60,8 +60,7 @@ ERROR_PROTOCOL = "Error: Failed to register event handler!"
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     cache_timeout = 2
@@ -79,6 +78,25 @@ class Py3status:
         self._down = 0
         self._handler_active = False
         self._up = 0
+
+    def _get_rates(self):
+        up, up_unit = self.py3.format_units(self._up, unit=self.rate_unit, si=self.si_units)
+        down, down_unit = self.py3.format_units(self._down, unit=self.rate_unit, si=self.si_units)
+        return {
+            "up": self.py3.safe_format(self.format_value, {"rate": up, "unit": up_unit}),
+            "down": self.py3.safe_format(self.format_value, {"rate": down, "unit": down_unit}),
+        }
+
+    def _handle_event(self, event):
+        self._down = event.read
+        self._up = event.written
+
+    def _register_event_handler(self):
+        self._control = Controller.from_port(address=self.control_address, port=self.control_port)
+        if self.control_password:
+            self._control.authenticate(password=self.control_password)
+        self._control.add_event_listener(lambda e: self._handle_event(e), EventType.BW)
+        self._handler_active = True
 
     def tor_rate(self, outputs, config):
         text = ""
@@ -99,35 +117,6 @@ class Py3status:
             text = self.py3.safe_format(self.format, self._get_rates())
 
         return {"cached_until": self.py3.time_in(self.cache_timeout), "full_text": text}
-
-    def _get_rates(self):
-        up, up_unit = self.py3.format_units(
-            self._up, unit=self.rate_unit, si=self.si_units
-        )
-        down, down_unit = self.py3.format_units(
-            self._down, unit=self.rate_unit, si=self.si_units
-        )
-        return {
-            "up": self.py3.safe_format(
-                self.format_value, {"rate": up, "unit": up_unit}
-            ),
-            "down": self.py3.safe_format(
-                self.format_value, {"rate": down, "unit": down_unit}
-            ),
-        }
-
-    def _handle_event(self, event):
-        self._down = event.read
-        self._up = event.written
-
-    def _register_event_handler(self):
-        self._control = Controller.from_port(
-            address=self.control_address, port=self.control_port
-        )
-        if self.control_password:
-            self._control.authenticate(password=self.control_password)
-        self._control.add_event_listener(lambda e: self._handle_event(e), EventType.BW)
-        self._handler_active = True
 
 
 if __name__ == "__main__":

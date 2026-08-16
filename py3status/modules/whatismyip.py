@@ -35,6 +35,17 @@ Color options:
     color_degraded: Output is unexpected (IP/country mismatch, etc.)
     color_good: Online
 
+Examples:
+```
+# ip choices
+whatismyip {
+    url_geo = "https://ifconfig.co/json"
+    # url_geo = "https://api.ip2location.io"
+    # url_geo = "https://ipinfo.io/json"
+    # url_geo = "http://ip-api.com/json"
+}
+```
+
 @author ultrabug, Cyril Levis (@cyrinux)
 
 SAMPLE OUTPUT
@@ -54,8 +65,7 @@ URL_GEO_NEW_DEFAULT = "https://ifconfig.co/json"
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     button_refresh = 2
@@ -120,7 +130,7 @@ class Py3status:
 
     def whatismyip(self):
         # refresh
-        current_time = time.perf_counter()
+        current_time = time.monotonic()
         refresh = current_time >= self.idle_time
 
         # time

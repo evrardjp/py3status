@@ -43,8 +43,7 @@ STRING_UNEXPECTED = "Insync: N/A"
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     cache_timeout = 10
@@ -62,9 +61,7 @@ class Py3status:
     def insync(self):
         # sync progress
         try:
-            queued = self.py3.command_output(
-                ["insync", "get_sync_progress"]
-            ).splitlines()
+            queued = self.py3.command_output(["insync", "get_sync_progress"]).splitlines()
         except Exception:
             return {
                 "cached_until": self.py3.time_in(self.cache_timeout),
@@ -108,9 +105,7 @@ class Py3status:
         return {
             "color": color,
             "cached_until": self.py3.time_in(self.cache_timeout),
-            "full_text": self.py3.safe_format(
-                format, {"status": status, "queued": queued}
-            ),
+            "full_text": self.py3.safe_format(format, {"status": status, "queued": queued}),
         }
 
 

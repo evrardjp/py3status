@@ -395,6 +395,33 @@ configuration parameters have been set. This is useful for any work a
 module must do before its output methods are run for the first time.
 `post_config_hook()` introduced in version 3.1
 
+### Method order
+
+Modules submitted to py3status should define methods in this order: optional
+`post_config_hook()`, optional private helper methods, required module method named
+after the file, optional `kill()`, and optional `on_click()`.
+
+For example, a module named `my_module.py` that defines every optional method
+should use this layout:
+
+```python
+class Py3status:
+    def post_config_hook(self):
+        ...
+
+    def _get_data(self):
+        ...
+
+    def my_module(self):
+        ...
+
+    def kill(self):
+        ...
+
+    def on_click(self, event):
+        ...
+```
+
 ## Py3 module helper
 
 Py3 is a special helper object that gets injected into py3status
@@ -449,10 +476,10 @@ composite.
 Py3status allows modules to maintain state through the use of the
 storage functions of the Py3 helper.
 
-Currently bool, int, float, None, unicode, dicts, lists, datetimes etc
+Currently bool, int, float, None, strings, dicts, lists, datetimes etc
 are supported. Basically anything that can be pickled. We do our best to
-ensure that the resulting pickles are compatible with both python
-versions 2 and 3.
+ensure that the resulting pickles remain readable across py3status
+updates where practical.
 
 The following helper functions are defined in the modules py3.
 
@@ -811,6 +838,19 @@ Loadavg 1.41 1.61 1.82
 Loadavg 1.41 1.61 1.82
 ^C
 ```
+
+## Logging
+
+Modules are encouraged to use Python's standard
+[`logging`](https://docs.python.org/3/library/logging.config.html?highlight=logging#logging-config-dictschema)
+module for debugging. Logging is not enabled by default. However, logs will be written
+to syslog with `INFO` level on --log-file and with `DEBUG` level on --debug.
+
+Several modules can write to logs, with varying levels of details.
+Therefore, when debugging a specific module, it may be useful to show only the
+one you're interested in. Add a `logging` dict under the `py3status` section of
+your config following `logging`'s configuration schema.
+
 ## Publishing custom modules on PyPI
 
 You can share your custom modules and make them available for py3status

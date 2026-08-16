@@ -1,10 +1,12 @@
 import argparse
 import json
+import logging
 import os
 import socket
 import threading
-
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 SERVER_ADDRESS = "/tmp/py3status_uds"
 MAX_SIZE = 1024
@@ -135,7 +137,6 @@ class CommandRunner:
     """
 
     def __init__(self, py3_wrapper):
-        self.debug = py3_wrapper.config["debug"]
         self.py3_wrapper = py3_wrapper
 
     def find_modules(self, requested_names):
@@ -158,8 +159,7 @@ class CommandRunner:
                     if requested_name == name.split(" ")[0]:
                         found_modules.add(module_name)
 
-        if self.debug:
-            self.py3_wrapper.log(f"found {found_modules}")
+        logger.debug("matched modules: %s", sorted(found_modules))
         return found_modules
 
     def refresh(self, data):
@@ -171,8 +171,7 @@ class CommandRunner:
         update_i3status = False
         for module_name in self.find_modules(modules):
             module = self.py3_wrapper.output_modules[module_name]
-            if self.debug:
-                self.py3_wrapper.log(f"refresh {module}")
+            logger.debug("refreshing module '%s'", module_name)
             if module["type"] == "py3status":
                 module["module"].force_update()
             else:
@@ -198,8 +197,7 @@ class CommandRunner:
             for name, message in CLICK_OPTIONS:
                 event[name] = data.get(name)
 
-            if self.debug:
-                self.py3_wrapper.log(event)
+            logger.debug("dispatching click event %s", event)
             # trigger the event
             self.py3_wrapper.events_thread.dispatch_event(event)
 
@@ -208,8 +206,7 @@ class CommandRunner:
         check the given command and send to the correct dispatcher
         """
         command = data.get("command")
-        if self.debug:
-            self.py3_wrapper.log(f"Running remote command {command}")
+        logger.debug("running command '%s'", command)
         if command == "refresh":
             self.refresh(data)
         elif command == "refresh_all":
@@ -227,7 +224,6 @@ class CommandServer(threading.Thread):
     def __init__(self, py3_wrapper):
         threading.Thread.__init__(self)
 
-        self.debug = py3_wrapper.config["debug"]
         self.py3_wrapper = py3_wrapper
 
         self.command_runner = CommandRunner(py3_wrapper)
@@ -244,9 +240,7 @@ class CommandServer(threading.Thread):
         # Create a UDS socket
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         sock.bind(server_address.as_posix())
-
-        if self.debug:
-            self.py3_wrapper.log(f"Unix domain socket at {server_address}")
+        logger.debug("socket listening on %s", server_address)
 
         # Listen for incoming connections
         sock.listen(1)
@@ -270,28 +264,20 @@ class CommandServer(threading.Thread):
         while True:
             try:
                 data = None
-                # Wait for a connection
-                if self.debug:
-                    self.py3_wrapper.log("waiting for a connection")
-
-                connection, client_address = self.sock.accept()
+                connection, _client_address = self.sock.accept()
+                logger.debug("connection accepted")
                 try:
-                    if self.debug:
-                        self.py3_wrapper.log("connection from")
-
                     data = connection.recv(MAX_SIZE)
                     if data:
                         data = json.loads(data.decode("utf-8"))
-                        if self.debug:
-                            self.py3_wrapper.log(f"received {data}")
+                        logger.debug("received payload %s", data)
                         self.command_runner.run_command(data)
                 finally:
                     # Clean up the connection
                     connection.close()
             except Exception:
                 if data:
-                    self.py3_wrapper.log("Command error")
-                    self.py3_wrapper.log(data)
+                    logger.error("payload: %s", data)
                 self.py3_wrapper.report_exception("command failed")
 
 
@@ -419,6 +405,7 @@ def command_parser():
     elif options.version:
         # print version
         from platform import python_version
+
         from py3status.version import version
 
         print(f"py3status {version} (python {python_version()})")
@@ -460,9 +447,7 @@ def parse_list_or_docstring(options, sps):
 
     # HARDCODE: make include path to search for user modules
     home_path = Path.home()
-    xdg_home_path = Path(
-        os.environ.get("XDG_CONFIG_HOME", home_path / ".config")
-    ).resolve()
+    xdg_home_path = Path(os.environ.get("XDG_CONFIG_HOME", home_path / ".config")).resolve()
     options.include_paths = [
         xdg_home_path / "py3status/modules",
         xdg_home_path / "i3status/py3status",

@@ -101,7 +101,7 @@ Run setup.py to install
 $ cd py3status
 
 # install you may need to use sudo to have required permissions
-$ python setup.py develop
+$ pip install -e .
 ```
 
 you can now run py3status and any changes to the code you make will be
@@ -120,6 +120,18 @@ available after a reload.
 
 Starting with version 3.26, py3status will only run using python 3.
 
+## Documentation
+
+Documentation pages are located under the docs/ folder.
+
+To run the documentation site locally (useful for previewing changes), use:
+
+```bash
+# you need to install hatch
+# pip install --user hatch
+hatch -e docs mkdocs serve
+```
+
 ## tox
 
 Py3status uses tox for testing. All submissions to the project must pass
@@ -129,7 +141,7 @@ testing. To install these via pip use
 $ pip install pytest
 $ pip install pytest-flake8
 $ pip install tox
-$ pip install black  # needs python 3.6+
+$ pip install black
 ```
 
 The tests can be run by using `tox` in the py3status root directory.

@@ -8,6 +8,19 @@ Configuration parameters:
 Format placeholders:
     {output} output
 
+Examples:
+```
+scroll {
+    length = 30
+
+    playerctl {}
+    networkmanager {}
+    static_string {
+        format = "some long long text"
+    }
+}
+```
+
 @author farnoy
 
 SAMPLE OUTPUT
@@ -22,8 +35,7 @@ STRING_ERROR = "missing modules"
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     cache_timeout = 1
@@ -40,9 +52,7 @@ class Py3status:
 
     def _set_scroll(self):
         length = sum(
-            len(output["full_text"])
-            for item in self.items
-            for output in self.py3.get_output(item)
+            len(output["full_text"]) for item in self.items for output in self.py3.get_output(item)
         )
 
         self.index += 1

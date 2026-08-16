@@ -1,4 +1,4 @@
-"""
+r"""
 Display sway inhibit idle status.
 
 This Module shows an indicator, if an idle is inhibited by an inhibitor.
@@ -28,7 +28,6 @@ SAMPLE OUTPUT
 
 
 class Py3status:
-
     # available configuration parameters
     cache_timeout = 1
     format = "Inhibit Idle: {inhibit_idle}"

@@ -1,26 +1,18 @@
 import base64
 import json
 import socket
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.request import HTTPCookieProcessor, Request, build_opener, install_opener, urlopen
 
-from urllib.error import URLError, HTTPError
-from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
-from urllib.request import (
-    urlopen,
-    Request,
-    build_opener,
-    install_opener,
-    HTTPCookieProcessor,
-)
-
-
-from py3status.exceptions import RequestTimeout, RequestURLError, RequestInvalidJSON
+from py3status.exceptions import RequestInvalidJSON, RequestTimeout, RequestURLError
 
 
 class HttpResponse:
     """
     Simple encapsulation of a http response for a url
 
-    The aim is to support both python 2 and 3 and be a simple as possible
+    The aim is to stay as simple as possible.
     """
 
     def __init__(self, url, params, data, headers, timeout, auth, cookiejar):
@@ -38,10 +30,9 @@ class HttpResponse:
             # rebuild the url
             url = urlunsplit(parts)
         if auth:
-            # we need to do the encode/decode to keep python 3 happy
-            # TODO: make this straight for python 3
-            auth_str = base64.b64encode(("%s:%s" % auth).encode("utf-8"))
-            headers["Authorization"] = "Basic %s" % auth_str.decode("utf-8")
+            userpass = ":".join(auth).encode("utf-8")
+            token = base64.b64encode(userpass).decode("utf-8")
+            headers["Authorization"] = f"Basic {token}"
         if data:
             data = urlencode(data).encode()
         if cookiejar is not None:

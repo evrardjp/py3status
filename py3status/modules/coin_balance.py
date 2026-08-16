@@ -99,10 +99,10 @@ SAMPLE OUTPUT
 """
 
 from errno import ENOENT
-import requests
-from string import Formatter
 from pathlib import Path
+from string import Formatter
 
+import requests
 
 COIN_PORTS = {"bitcoin": 8332, "dogecoin": 22555, "litecoin": 9332}
 
@@ -110,8 +110,7 @@ REQUEST = {"method": "getbalance"}
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     cache_timeout = 30
@@ -128,19 +127,6 @@ class Py3status:
         self._active_coins = []
         self._config = None
         self._credential_cache = {}
-
-    def coin_balance(self, outputs, config):
-        self._config = config
-
-        self._active_coins = [e[1] for e in Formatter().parse(self.format)]
-        balances = {}
-        for coin in self._active_coins:
-            balances[coin] = self._get_balance(coin)
-
-        return {
-            "full_text": self.py3.safe_format(self.format, balances),
-            "cached_until": self.py3.time_in(self.cache_timeout),
-        }
 
     def _get_daemon_config_value(self, coin, key):
         try:
@@ -197,6 +183,19 @@ class Py3status:
                 return "Request Error"
         except:  # noqa e722
             return "Connection to '" + url + "' failed"
+
+    def coin_balance(self, outputs, config):
+        self._config = config
+
+        self._active_coins = [e[1] for e in Formatter().parse(self.format)]
+        balances = {}
+        for coin in self._active_coins:
+            balances[coin] = self._get_balance(coin)
+
+        return {
+            "full_text": self.py3.safe_format(self.format, balances),
+            "cached_until": self.py3.time_in(self.cache_timeout),
+        }
 
 
 if __name__ == "__main__":

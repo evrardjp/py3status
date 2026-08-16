@@ -25,6 +25,8 @@ Configuration parameters:
         (default 1)
     cache_timeout: How often the module is refreshed in seconds
         (default 60)
+    calendar_id: The ID of the calendar to display.
+        (default "primary")
     client_secret: the path to your client_secret file which
         contains your OAuth 2.0 credentials.
         (default '~/.config/py3status/google_calendar.client_secret')
@@ -51,7 +53,7 @@ Configuration parameters:
     format_timer: The format used for the {format_timer} placeholder to display
         time until an event starts or time until an event in progress is over.
         *(default '\\?color=time ([\\?if=days {days}d ][\\?if=hours {hours}h ]'
-        '[\\?if=minutes {minutes}m])[\\?if=is_current  left]')*
+        '[\\?if=minutes {minutes}m])[\\?if=active  left]')*
     ignore_all_day_events: Sets whether to display all day events or not.
         (default False)
     num_events: The maximum number of events to display.
@@ -100,10 +102,14 @@ format_event and format_notification placeholders:
     {format_timer} The time until the event starts (or until it is over
         if already in progress).
 
+format_event placeholders:
+    {active} Whether the event is currently active.
+
 format_timer placeholders:
     {days} The number of days until the event.
     {hours} The number of hours until the event.
     {minutes} The number of minutes until the event.
+    {active} Whether the event is currently active.
 
 Color options:
     color_event: Color for a single event.
@@ -111,7 +117,7 @@ Color options:
 
 Requires:
     1. Python library google-api-python-client.
-    2. Python library python-dateutil.
+    2. Python library google-auth-oauthlib.
     3. OAuth 2.0 credentials for the Google Calendar api.
 
     Follow Step 1 of the guide here to obtain your OAuth 2.0 credentials:
@@ -150,7 +156,6 @@ SAMPLE OUTPUT
 ]
 """
 
-import httplib2
 import datetime
 import time
 from pathlib import Path
@@ -159,21 +164,17 @@ try:
     from googleapiclient import discovery
 except ImportError:
     from apiclient import discovery
-from oauth2client import client
-from oauth2client import clientsecrets
-from oauth2client import tools
-from oauth2client.file import Storage
-from httplib2 import ServerNotFoundError
-from dateutil import parser
-from dateutil.tz import tzlocal
 
-SCOPES = "https://www.googleapis.com/auth/calendar.readonly"
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+
+SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
 APPLICATION_NAME = "py3status google_calendar module"
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     auth_token = "~/.config/py3status/google_calendar.auth_token"
@@ -183,6 +184,7 @@ class Py3status:
     button_refresh = 2
     button_toggle = 1
     cache_timeout = 60
+    calendar_id = "primary"
     client_secret = "~/.config/py3status/google_calendar.client_secret"
     events_within_hours = 12
     force_lowercase = False
@@ -197,7 +199,7 @@ class Py3status:
     format_time = "%I:%M %p"
     format_timer = (
         r"\?color=time ([\?if=days {days}d ][\?if=hours {hours}h ]"
-        r"[\?if=minutes {minutes}m])[\?if=is_current  left]"
+        r"[\?if=minutes {minutes}m])[\?if=active  left]"
     )
     ignore_all_day_events = False
     num_events = 3
@@ -228,46 +230,38 @@ class Py3status:
 
         Returns: Credentials, the obtained credential.
         """
-        client_secret_path = self.client_secret.parent
-        auth_token_path = self.auth_token.parent
+        self.auth_token.parent.mkdir(parents=True, exist_ok=True)
+        self.client_secret.parent.mkdir(parents=True, exist_ok=True)
 
-        auth_token_path.mkdir(parents=True, exist_ok=True)
-        client_secret_path.mkdir(parents=True, exist_ok=True)
+        credentials = None
+        if self.auth_token.exists():
+            credentials = Credentials.from_authorized_user_file(str(self.auth_token), SCOPES)
 
-        flags = tools.argparser.parse_args(args=[])
-        store = Storage(self.auth_token)
-        credentials = store.get()
-
-        if not credentials or credentials.invalid:
-            try:
-                flow = client.flow_from_clientsecrets(self.client_secret, SCOPES)
-                flow.user_agent = APPLICATION_NAME
-                if flags:
-                    credentials = tools.run_flow(flow, store, flags)
-                else:  # Needed only for compatibility with Python 2.6
-                    credentials = tools.run(flow, store)
-            except clientsecrets.InvalidClientSecretsError:
-                raise Exception("missing client_secret")
-            """
-            Have to restart i3 after getting credentials to prevent bad output.
-            This only has to be done once on the first run of the module.
-            """
-            self.py3.command_run(f"{self.py3.get_wm_msg()} restart")
+        if not credentials or not credentials.valid:
+            if credentials and credentials.expired and credentials.refresh_token:
+                credentials.refresh(Request())
+                self.auth_token.write_text(credentials.to_json())
+            else:
+                if not self.client_secret.exists():
+                    raise Exception("missing client_secret")
+                flow = InstalledAppFlow.from_client_secrets_file(str(self.client_secret), SCOPES)
+                credentials = flow.run_local_server(port=0)
+                self.auth_token.write_text(credentials.to_json())
+                # restart i3 after first authorization to prevent bad output
+                self.py3.command_run(f"{self.py3.get_wm_msg()} restart")
 
         return credentials
 
     def _authorize_credentials(self):
         """
-        Fetches an access/refresh token by authorizing OAuth 2.0 credentials.
+        Builds the Google Calendar API service from credentials.
 
-        Returns: True, if the authorization was successful.
-                 False, if a ServerNotFoundError is thrown.
+        Returns: True on success, False on network/auth failure.
         """
         try:
-            http = self.credentials.authorize(httplib2.Http())
-            self.service = discovery.build("calendar", "v3", http=http)
+            self.service = discovery.build("calendar", "v3", credentials=self.credentials)
             return True
-        except ServerNotFoundError:
+        except Exception:
             return False
 
     def _get_events(self):
@@ -276,7 +270,7 @@ class Py3status:
 
         Returns: The list of events.
         """
-        self.last_update = time.perf_counter()
+        self.last_update = time.monotonic()
         time_min = datetime.datetime.utcnow()
         time_max = time_min + datetime.timedelta(hours=self.events_within_hours)
         events = []
@@ -285,7 +279,7 @@ class Py3status:
             eventsResult = (
                 self.service.events()
                 .list(
-                    calendarId="primary",
+                    calendarId=self.calendar_id,
                     timeMax=time_max.isoformat() + "Z",  # 'Z' indicates UTC time
                     timeMin=time_min.isoformat() + "Z",  # 'Z' indicates UTC time
                     singleEvents=True,
@@ -323,9 +317,7 @@ class Py3status:
 
                 # filter out blacklisted event names
                 if event["summary"] is not None:
-                    if event["summary"].lower() in (
-                        e.lower() for e in self.blacklist_events
-                    ):
+                    if event["summary"].lower() in (e.lower() for e in self.blacklist_events):
                         continue
 
                 events.append(event)
@@ -342,15 +334,15 @@ class Py3status:
             self.py3.notify_user(warn_message, "warning", self.warn_timeout)
 
     def _gstr_to_date(self, date_str):
-        """ Returns a dateime object from calendar date string."""
-        return parser.parse(date_str).replace(tzinfo=tzlocal())
+        """Returns a dateime object from calendar date string."""
+        return datetime.datetime.fromisoformat(date_str).astimezone()
 
     def _gstr_to_datetime(self, date_time_str):
-        """ Returns a datetime object from calendar date/time string."""
-        return parser.parse(date_time_str)
+        """Returns a datetime object from calendar date/time string."""
+        return datetime.datetime.fromisoformat(date_time_str.replace("Z", "+00:00"))
 
     def _datetime_to_str(self, date_time, dt_format):
-        """ Returns a strftime formatted string from a datetime object."""
+        """Returns a strftime formatted string from a datetime object."""
         return date_time.strftime(dt_format)
 
     def _delta_time(self, date_time):
@@ -358,7 +350,7 @@ class Py3status:
         Returns in a dict the number of days/hours/minutes and total minutes
         until date_time.
         """
-        now = datetime.datetime.now(tzlocal())
+        now = datetime.datetime.now().astimezone()
         diff = date_time - now
 
         days = int(diff.days)
@@ -373,7 +365,7 @@ class Py3status:
             "total_minutes": total_minutes,
         }
 
-    def _format_timedelta(self, index, time_delta, is_current):
+    def _format_timedelta(self, index, time_delta, event_active):
         """
         Formats the dict time_to containing days/hours/minutes until an
         event starts into a composite according to time_to_formatted.
@@ -389,7 +381,8 @@ class Py3status:
                     "days": time_delta["days"],
                     "hours": time_delta["hours"],
                     "minutes": time_delta["minutes"],
-                    "is_current": is_current,
+                    "is_current": event_active,  # For backwards compatibility, was never documented.
+                    "active": event_active,
                 },
             )
 
@@ -414,9 +407,7 @@ class Py3status:
             event_dict["summary"] = event.get("summary")
             event_dict["location"] = event.get("location")
             event_dict["description"] = event.get("description")
-            self.event_urls.append(
-                event.get(self.preferred_event_link, event.get("htmlLink"))
-            )
+            self.event_urls.append(event.get(self.preferred_event_link, event.get("htmlLink")))
 
             if event["start"].get("date") is not None:
                 start_dt = self._gstr_to_date(event["start"].get("date"))
@@ -425,7 +416,7 @@ class Py3status:
                 start_dt = self._gstr_to_datetime(event["start"].get("dateTime"))
                 end_dt = self._gstr_to_datetime(event["end"].get("dateTime"))
 
-            if end_dt < datetime.datetime.now(tzlocal()):
+            if end_dt < datetime.datetime.now().astimezone():
                 continue
 
             event_dict["start_time"] = self._datetime_to_str(start_dt, self.format_time)
@@ -437,13 +428,11 @@ class Py3status:
             time_delta = self._delta_time(start_dt)
             if time_delta["days"] < 0:
                 time_delta = self._delta_time(end_dt)
-                is_current = True
+                event_active = True
             else:
-                is_current = False
+                event_active = False
 
-            event_dict["format_timer"] = self._format_timedelta(
-                index, time_delta, is_current
-            )
+            event_dict["format_timer"] = self._format_timedelta(index, time_delta, event_active)
 
             if self.warn_threshold > 0:
                 self._check_warn_threshold(time_delta, event_dict)
@@ -460,6 +449,7 @@ class Py3status:
                     "start_date": event_dict["start_date"],
                     "end_date": event_dict["end_date"],
                     "format_timer": event_dict["format_timer"],
+                    "active": event_active,
                 },
             )
 
@@ -520,7 +510,7 @@ class Py3status:
                 self.py3.prevent_refresh()
             elif button == self.button_refresh:
                 # wait before the next refresh
-                if time.perf_counter() - self.last_update > 1:
+                if time.monotonic() - self.last_update > 1:
                     self.no_update = False
             elif button == self.button_toggle:
                 self.button_states[button_index] = not self.button_states[button_index]

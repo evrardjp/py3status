@@ -67,11 +67,27 @@ imap {
 }
 ```
 
+## Modules dependencies
+
+Py3status itself **does not** handle the possible dependencies of the
+modules you use. Each module's documentation has a dedicated `Requires`
+section allowing you to know which libraries or binaries they depend
+on. It's up to you to install them on your system.
+
 ## The py3status configuration section
 
 This special section holds py3status specific configuration. Settings
 here will affect all py3status modules. Many settings e.g. colors can
 still be overridden by also defining in the individual module.
+
+- `stop_signal`. Specify a signal number to be used by i3bar to stop/resume the bar refresh. This is useful if you want to prevent i3bar from stopping py3status when the bar is not visible (hidden/fullscreen).
+
+```
+# prevent i3bar from stopping py3status when hidden/fullscreen
+py3status {
+    stop_signal = 0
+}
+```
 
 - `nagbar_font`. Specify a font for `i3-nagbar -f <font>`.
 
@@ -949,3 +965,20 @@ weather_owm {
     request_retry_wait = 5
 }
 ```
+
+## Running Py3status outside i3bar
+
+Want Py3status in your beloved tmux? Sure!
+
+While Py3status is by default running using the `i3bar` output format,
+you can change the `output_format` of the `general` section of the
+configuration file to get your favorite status bar in the following
+programs:
+
+- i3bar (default)
+- dzen2
+- lemonbar
+- term
+- tmux
+- xmobar
+- none (no special output format)

@@ -26,17 +26,16 @@ off
 [{'full_text': 'SUSPEND OFF', 'color': '#FF0000'}]
 """
 
-from dbus import SystemBus
 from os import close
 
+from dbus import SystemBus
 
 STRING_DBUS_EXCEPTION = "DBUS error, systemd-logind not started?"
 STRING_BAD_LOCK_TYPES = "DBUS error, bad lock types used"
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     format = r"[\?color=state SUSPEND [\?if=state OFF|ON]]"

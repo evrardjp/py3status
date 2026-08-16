@@ -10,44 +10,56 @@ Configuration parameters:
     check_pid: If True, act just like the default i3status module.
         (default False)
     format: Format of the output.
-        (default 'VPN: {name}|VPN: no')
+        (default 'VPN: {format_vpn}|VPN: no')
+    format_vpn: display format for vpns (default '{name}')
+    format_vpn_separator: show separator if more than one VPN (default ', ')
     pidfile: Same as i3status pidfile, checked when check_pid is True.
         (default '/sys/class/net/vpn0/dev_id')
 
 Format placeholders:
+    {format_vpn} format for VPNs
+
+Format VPN placeholders:
     {name} The name and/or status of the VPN.
+    {ipv4} The IPv4 address of the VPN
+    {ipv6} The IPv6 address of the VPN
 
 Color options:
     color_bad: VPN connected
     color_good: VPN down
 
 Requires:
-    pydbus: Which further requires PyGi. Check your distribution's repositories.
+    dbus-python: to interact with dbus
+    pygobject: which in turn requires libcairo2-dev, libgirepository1.0-dev
+    NetworkManager: provides the org.freedesktop.NetworkManager DBus service
 
 @author Nathan Smith <nathan AT praisetopia.org>
 
 SAMPLE OUTPUT
-{'color': '#00FF00', 'full_text': u'VPN: yes'}
+{'color': '#00FF00', 'full_text': u'VPN: vpn0, tun0'}
 
 off
 {'color': '#FF0000', 'full_text': u'VPN: no'}
 """
 
-from pydbus import SystemBus
-from gi.repository import GObject
+from pathlib import Path
 from threading import Thread
 from time import sleep
-from pathlib import Path
+
+import dbus
+from dbus.mainloop.glib import DBusGMainLoop
+from gi.repository import GLib
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     cache_timeout = 10
     check_pid = False
-    format = "VPN: {name}|VPN: no"
+    format = "VPN: {format_vpn}|VPN: no"
+    format_vpn = "{name}"
+    format_vpn_separator = ", "
     pidfile = "/sys/class/net/vpn0/dev_id"
 
     def post_config_hook(self):
@@ -67,15 +79,21 @@ class Py3status:
     def _start_loop(self):
         """Starts main event handler loop, run in handler thread t."""
         # Create our main loop, get our bus, and add the signal handler
-        loop = GObject.MainLoop()
-        bus = SystemBus()
-        manager = bus.get(".NetworkManager")
-        manager.onPropertiesChanged = self._vpn_signal_handler
+        loop = DBusGMainLoop(set_as_default=True)
+        dbus.set_default_main_loop(loop)
 
-        # initialize active connections, some of them might be VPNs
-        self.active = manager.ActiveConnections
+        bus = dbus.SystemBus()
+        bus.add_signal_receiver(self._vpn_signal_handler, path="/org/freedesktop/NetworkManager")
+        # Initialize the already active connections
+        manager = bus.get_object(
+            "org.freedesktop.NetworkManager",
+            "/org/freedesktop/NetworkManager",
+        )
+        interface = dbus.Interface(manager, "org.freedesktop.DBus.Properties")
+        self.active = interface.Get("org.freedesktop.NetworkManager", "ActiveConnections")
 
-        # Loop forever
+        # Loop forever to listen for events
+        loop = GLib.MainLoop()
         loop.run()
 
     def _vpn_signal_handler(self, *args):
@@ -98,14 +116,59 @@ class Py3status:
         # Sleep for a bit to let any changes in state finish
         sleep(0.3)
         # Check if any active connections are a VPN
-        bus = SystemBus()
-        ids = []
+        bus = dbus.SystemBus()
+        vpns = []
         for name in self.active:
-            conn = bus.get(".NetworkManager", name)
-            if conn.Vpn:
-                ids.append(conn.Id)
-        # No active VPN
-        return ids
+            manager = bus.get_object(
+                "org.freedesktop.NetworkManager",
+                name,
+            )
+            interface = dbus.Interface(manager, "org.freedesktop.DBus.Properties")
+            try:
+                properties = interface.GetAll("org.freedesktop.NetworkManager.Connection.Active")
+                conn_settings = self._get_connection_settings(bus, properties["Connection"])
+                if self._is_vpn(properties, conn_settings):
+                    ipv4, ipv6 = self._get_ips(conn_settings)
+                    vpns.append({"name": properties.get("Id"), "ipv4": ipv4, "ipv6": ipv6})
+            except dbus.DBusException:
+                # the connection id has disappeared
+                pass
+
+        return vpns
+
+    def _get_connection_settings(self, bus, connection_path):
+        conn = bus.get_object("org.freedesktop.NetworkManager", connection_path)
+        interface = dbus.Interface(conn, "org.freedesktop.NetworkManager.Settings.Connection")
+        return interface.GetSettings()
+
+    def _is_vpn(self, properties, settings):
+        if properties.get("Vpn"):
+            return True
+
+        # Only accept wireguard or tun type interfaces
+        type = properties.get("Type")
+        if type == "wireguard":
+            return True
+        if type != "tun":
+            return False
+
+        # tun interfaces in NetworkManager refer to TUN/TAP virtual interfaces. If the connection is
+        # a port, it is part of a virtualized network, not a standalone VPN
+        conn = settings.get("connection", {})
+        # 'slave-type' is the deprecated alias of 'port-type'
+        return not (conn.get("port-type") or conn.get("slave-type"))
+
+    def _get_ips(self, conn_settings):
+        ipv4 = self._get_ip(conn_settings.get("ipv4", {}))
+        ipv6 = self._get_ip(conn_settings.get("ipv6", {}))
+        return ipv4, ipv6
+
+    def _get_ip(self, ip_settings):
+        address_data = ip_settings.get("address-data")
+        if address_data:
+            return address_data[0].get("address")
+
+        return None
 
     def _check_pid(self):
         """Returns True if pidfile exists, False otherwise."""
@@ -119,25 +182,27 @@ class Py3status:
         if not self.check_pid and not self.thread_started:
             self._start_handler_thread()
 
-        # Set color_bad as default output. Replaced if VPN active.
-        name = None
-        color = self.py3.COLOR_BAD
+        vpns = []
 
         # If we are acting like the default i3status module
         if self.check_pid:
             if self._check_pid():
-                name = "yes"
-                color = self.py3.COLOR_GOOD
+                format_vpn = self.py3.safe_format(self.format_vpn, {"name": "yes"})
+                vpns.append(format_vpn)
 
         # Otherwise, find the VPN name, if it is active
         else:
-            vpn = self._get_vpn_status()
-            if vpn:
-                name = ", ".join(vpn)
-                color = self.py3.COLOR_GOOD
+            vpn_info = self._get_vpn_status()
+            for vpn in vpn_info:
+                format_vpn = self.py3.safe_format(self.format_vpn, vpn)
+                vpns.append(format_vpn)
+
+        color = self.py3.COLOR_GOOD if vpns else self.py3.COLOR_BAD
 
         # Format and create the response dict
-        full_text = self.py3.safe_format(self.format, {"name": name})
+        format_vpn_separator = self.py3.safe_format(self.format_vpn_separator)
+        format_vpns = self.py3.composite_join(format_vpn_separator, vpns)
+        full_text = self.py3.safe_format(self.format, {"format_vpn": format_vpns})
         response = {
             "full_text": full_text,
             "color": color,

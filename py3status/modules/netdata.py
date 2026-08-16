@@ -37,8 +37,7 @@ from pathlib import Path
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     cache_timeout = 2
@@ -107,9 +106,6 @@ class Py3status:
         }
 
     def post_config_hook(self):
-        self.last_transmitted_bytes = 0
-        self.last_received_bytes = 0
-        self.last_time = time.perf_counter()
         # Get default gateway from /proc.
         if self.nic is None:
             with Path("/proc/net/route").open() as fh:
@@ -123,6 +119,8 @@ class Py3status:
             self.py3.log(f"selected nic: {self.nic}")
 
         self.thresholds_init = self.py3.get_color_names_list(self.format)
+        self.last_received_bytes, self.last_transmitted_bytes = self._get_bytes()
+        self.last_time = time.monotonic()
 
     def _get_bytes(self):
         with Path("/proc/net/dev").open() as fh:
@@ -135,7 +133,7 @@ class Py3status:
     def netdata(self):
         received_bytes, transmitted_bytes = self._get_bytes()
         # speed
-        current_time = time.perf_counter()
+        current_time = time.monotonic()
         timedelta = current_time - self.last_time
         self.last_time = current_time
         down = (received_bytes - self.last_received_bytes) / 1024 / timedelta

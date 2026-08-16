@@ -24,14 +24,12 @@ SAMPLE OUTPUT
 """
 
 import json
-
 from pathlib import Path
 from typing import Dict, List, Union
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     cache_timeout = 10
@@ -40,6 +38,25 @@ class Py3status:
 
     def post_config_hook(self):
         self.state_file = Path(self.state_file).expanduser()
+
+    def _format_output(self, session_data: Dict[str, Union[str, int, List[str]]]) -> Dict[str, str]:
+        if not session_data:
+            return {"full_text": "No project started", "color": self.py3.COLOR_BAD}
+
+        project = session_data["project"]
+        tags = session_data["tags"]
+
+        if tags:
+            tag_str = " [{}]".format(", ".join(tags))
+        else:
+            tag_str = " "
+
+        return {
+            "full_text": self.py3.safe_format(
+                self.format, {"project": project, "tag_str": tag_str}
+            ),
+            "color": self.py3.COLOR_GOOD,
+        }
 
     def watson(self) -> Dict[str, str]:
         if not self.state_file.is_file():
@@ -67,27 +84,6 @@ class Py3status:
                 "color": self.py3.COLOR_BAD,
                 "cached_until": self.py3.time_in(seconds=self.cache_timeout),
             }
-
-    def _format_output(
-        self, session_data: Dict[str, Union[str, int, List[str]]]
-    ) -> Dict[str, str]:
-        if not session_data:
-            return {"full_text": "No project started", "color": self.py3.COLOR_BAD}
-
-        project = session_data["project"]
-        tags = session_data["tags"]
-
-        if tags:
-            tag_str = " [{}]".format(", ".join(tags))
-        else:
-            tag_str = " "
-
-        return {
-            "full_text": self.py3.safe_format(
-                self.format, {"project": project, "tag_str": tag_str}
-            ),
-            "color": self.py3.COLOR_GOOD,
-        }
 
 
 if __name__ == "__main__":

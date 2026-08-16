@@ -47,15 +47,14 @@ SAMPLE OUTPUT
 {'full_text': 'emrg : 0/0'}
 """
 
-import re
 import copy
+import re
 
 STRING_NOT_INSTALLED = "not installed"
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     cache_timeout = 30
@@ -65,17 +64,6 @@ class Py3status:
         " {action} {category}/{pkg}]|calculating...]|: stopped 0/0]"
     )
     prefix = "emrg"
-
-    def _emerge_running(self):
-        """
-        Check if emerge is running.
-        Returns true if at least one instance of emerge is running.
-        """
-        try:
-            self.py3.command_output(["pgrep", "emerge"])
-            return True
-        except Exception:
-            return False
 
     def post_config_hook(self):
         if not self.py3.check_commands("emerge"):
@@ -88,6 +76,17 @@ class Py3status:
             "pkg": "",
             "total": 0,
         }
+
+    def _emerge_running(self):
+        """
+        Check if emerge is running.
+        Returns true if at least one instance of emerge is running.
+        """
+        try:
+            self.py3.command_output(["pgrep", "emerge"])
+            return True
+        except Exception:
+            return False
 
     def _get_progress(self):
         """
@@ -124,8 +123,7 @@ class Py3status:
         return ret
 
     def emerge_status(self):
-        """
-        """
+        """ """
         response = {}
         ret = copy.deepcopy(self.ret_default)
         if self._emerge_running():

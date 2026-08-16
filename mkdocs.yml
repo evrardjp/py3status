@@ -1,16 +1,25 @@
-site_name: Py3status
+site_name: Py3status Documentation
 site_url: https://ultrabug.github.io/py3status
 repo_url: https://github.com/ultrabug/py3status
 
+copyright: Copyright © 2021-2023 Alexys Jacob
+
 theme:
-  name: readthedocs
+  name: material
   font:
     text: Ubuntu
     code: Ubuntu Mono
-  icon:
-    logo: material/file-document-multiple
+  logo: assets/logomark.png
+  favicon: assets/favicon.ico
   palette:
-    primary: blue
+    primary: black
+  features:
+    - navigation.expand
+    - navigation.indexes
+    - navigation.sections
+    - navigation.tabs
+    - toc.follow
+    - toc.integrate
 
 extra:
   social:
@@ -23,9 +32,9 @@ markdown_extensions:
 
 plugins:
   - search
-  - mkdocs-simple-hooks:
-      hooks:
-        on_config: "py3status.autodoc:create_auto_documentation"
+
+hooks:
+  - py3status/autodoc.py
 
 nav:
   - Introduction: index.md

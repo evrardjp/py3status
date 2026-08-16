@@ -7,7 +7,51 @@ GENERAL_DEFAULTS = {
     "color_separator": "#333333",
     "colors": True,
     "interval": 5,
-    "output_format": "i3bar",
+    "output_format": None,
+}
+
+LOGGING_CONFIG = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {"shortname": {"()": "py3status.log.ShortnameFilter"}},
+    "handlers": {
+        "syslog": {
+            "formatter": "syslog",
+            "filters": ["shortname"],
+            "class": "logging.handlers.SysLogHandler",
+            "address": "/dev/log",
+        },
+    },
+    "formatters": {
+        "syslog": {
+            "format": "[%(shortname)s] %(message)s",
+        },
+        "logfile": {
+            "format": "%(asctime)s %(levelname)s [%(shortname)s] %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+        },
+    },
+    "root": {"handlers": ["syslog"], "level": "INFO"},
+}
+
+LOGGING_LOG_FILE_CONFIG = {
+    "__log_file": {
+        "formatter": "logfile",
+        "filters": ["shortname"],
+        "class": "logging.FileHandler",
+        "filename": None,
+    }
+}
+
+LOGGING_LOG_LEVELS = {
+    'CRITICAL': 50,
+    'FATAL': 50,
+    'ERROR': 40,
+    'WARN': 30,
+    'WARNING': 30,
+    'INFO': 20,
+    'DEBUG': 10,
+    'NOTSET': 0,
 }
 
 MAX_NESTING_LEVELS = 4
@@ -225,8 +269,24 @@ RETIRED_MODULES = {
         "new": ["coin_market"],
         "msg": "Module {old} is no longer available due to unmaintained APIs. You can try a different module {new}.",
     },
+    "clementine": {
+        "new": ["playerctl"],
+        "msg": "Module {old} has been replaced with a module {new}.",
+    },
+    "fedora_updates": {
+        "new": ["dnf_updates"],
+        "msg": "Module {old} has been replaced with a module {new}.",
+    },
+    "gpmdp": {
+        "new": ["playerctl"],
+        "msg": "Module {old} has been replaced with a module {new}.",
+    },
     "nvidia_temp": {
         "new": ["nvidia_smi"],
+        "msg": "Module {old} has been replaced with a module {new}.",
+    },
+    "player_control": {
+        "new": ["playerctl"],
         "msg": "Module {old} has been replaced with a module {new}.",
     },
     "scratchpad_async": {
@@ -236,6 +296,14 @@ RETIRED_MODULES = {
     "scratchpad_counter": {
         "new": ["scratchpad"],
         "msg": "Module {old} has been replaced with a consolidated module {new}.",
+    },
+    "thunderbird_todos": {
+        "new": [],
+        "msg": "Module {old} has been deprecated.",
+    },
+    "transmission": {
+        "new": [],
+        "msg": "Module {old} has been deprecated.",
     },
     "window_title": {
         "new": ["window"],

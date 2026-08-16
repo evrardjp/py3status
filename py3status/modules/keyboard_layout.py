@@ -55,8 +55,7 @@ VARIANTS_RE = re.compile(r".*variant:\s*(([\w-]+,?)+).*", flags=re.DOTALL)
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     button_next = 4
@@ -92,53 +91,12 @@ class Py3status:
             "us": "#729FCF",
         }
 
-    def keyboard_layout(self):
-        layout, variant = self._get_command()
-        # If the current layout is not in our layouts list we need to add it
-        if layout not in self._layouts:
-            self._layouts = [layout] + self.layouts
-            self._active = 0
-        # show new layout if it has been changed externally
-        if layout != self._last_layout:
-            self._active = self._layouts.index(layout)
-            self._last_layout = layout
-        lang = self._layouts[self._active]
-
-        response = {
-            "cached_until": self.py3.time_in(self.cache_timeout),
-            "full_text": self.py3.safe_format(
-                self.format, {"layout": lang, "variant": variant}
-            ),
-        }
-
-        if self.colors and not self.colors_dict:
-            self.colors_dict = {
-                k.strip(): v.strip()
-                for k, v in (layout.split("=") for layout in self.colors.split(","))
-            }
-
-        # colorize languages containing spaces and/or dashes too
-        language = lang.upper()
-        for character in " -":
-            if character in language:
-                language = language.replace(character, "_")
-
-        lang_color = getattr(self.py3, f"COLOR_{language}")
-        if not lang_color:
-            lang_color = self.colors_dict.get(lang)
-        if not lang_color:  # old compatibility: try default value
-            lang_color = self.defaults.get(lang)
-        if lang_color:
-            response["color"] = lang_color
-
-        return response
-
     def _get_xkblayout(self):
         layout, variant = [
             x.strip()
-            for x in self.py3.command_output(
-                ["xkblayout-state", "print", "%s|SEPARATOR|%v"]
-            ).split("|SEPARATOR|")
+            for x in self.py3.command_output(["xkblayout-state", "print", "%s|SEPARATOR|%v"]).split(
+                "|SEPARATOR|"
+            )
         ]
         return layout, variant
 
@@ -166,9 +124,7 @@ class Py3status:
     def _set_xkblayout(self):
         layout = self._layouts[self._active]
         layout_pos = (
-            self.py3.command_output(["xkblayout-state", "print", "%E"])
-            .split()
-            .index(layout)
+            self.py3.command_output(["xkblayout-state", "print", "%E"]).split().index(layout)
         )
         self.py3.command_run(f"xkblayout-state set {layout_pos}")
 
@@ -176,6 +132,45 @@ class Py3status:
         self._active += delta
         self._active = self._active % len(self._layouts)
         self._set_command()
+
+    def keyboard_layout(self):
+        layout, variant = self._get_command()
+        # If the current layout is not in our layouts list we need to add it
+        if layout not in self._layouts:
+            self._layouts = [layout] + self.layouts
+            self._active = 0
+        # show new layout if it has been changed externally
+        if layout != self._last_layout:
+            self._active = self._layouts.index(layout)
+            self._last_layout = layout
+        lang = self._layouts[self._active]
+
+        response = {
+            "cached_until": self.py3.time_in(self.cache_timeout),
+            "full_text": self.py3.safe_format(self.format, {"layout": lang, "variant": variant}),
+        }
+
+        if self.colors and not self.colors_dict:
+            self.colors_dict = {
+                k.strip(): v.strip()
+                for k, v in (layout.split("=") for layout in self.colors.split(","))
+            }
+
+        # colorize languages containing spaces and/or dashes too
+        language = lang.upper()
+        for character in " -":
+            if character in language:
+                language = language.replace(character, "_")
+
+        lang_color = getattr(self.py3, f"COLOR_{language}")
+        if not lang_color:
+            lang_color = self.colors_dict.get(lang)
+        if not lang_color:  # old compatibility: try default value
+            lang_color = self.defaults.get(lang)
+        if lang_color:
+            response["color"] = lang_color
+
+        return response
 
     def on_click(self, event):
         button = event["button"]

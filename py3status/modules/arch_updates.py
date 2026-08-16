@@ -2,7 +2,7 @@
 Display number of pending updates for Arch Linux.
 
 Configuration parameters:
-    cache_timeout: refresh interval for this module (default 600)
+    cache_timeout: refresh interval for this module (default 3600)
     format: display format for this module, otherwise auto (default None)
     hide_if_zero: don't show on bar if True (default False)
 
@@ -17,6 +17,11 @@ Requires:
     trizen: lightweight pacman wrapper and AUR helper
     yay: yet another yogurt. pacman wrapper and aur helper written in go
     paru: feature packed AUR helper
+    pikaur: pacman wrapper and AUR helper written in python
+
+Note:
+    py3status for Arch-based distributions should include an alpm hook
+    to refresh this module after packages and/or files being modified.
 
 @author Iain Tatch <iain.tatch@gmail.com>
 @license BSD
@@ -32,11 +37,10 @@ STRING_NOT_INSTALLED = "{} not installed"
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
-    cache_timeout = 600
+    cache_timeout = 3600
     format = None
     hide_if_zero = False
 
@@ -46,9 +50,7 @@ class Py3status:
     def post_config_hook(self):
         helper = {
             "pacman": self.py3.check_commands(["checkupdates"]),
-            "aur": self.py3.check_commands(
-                ["auracle", "trizen", "yay", "cower", "paru"]
-            ),
+            "aur": self.py3.check_commands(["auracle", "trizen", "yay", "paru", "pikaur"]),
         }
         if self.format:
             placeholders = self.py3.get_placeholders_list(self.format)
@@ -84,17 +86,10 @@ class Py3status:
 
     def _get_auracle_updates(self):
         try:
-            updates = self.py3.command_output(["auracle", "sync"])
+            updates = self.py3.command_output(["auracle", "outdated"])
             return len(updates.splitlines())
         except self.py3.CommandError as ce:
             return None if ce.error else 0
-
-    def _get_cower_updates(self):
-        try:
-            self.py3.command_output(["cower", "-u"])
-            return None
-        except self.py3.CommandError as ce:
-            return len(ce.output.splitlines())
 
     def _get_trizen_updates(self):
         try:
@@ -107,15 +102,23 @@ class Py3status:
         try:
             updates = self.py3.command_output(["yay", "-Qua"])
             return len(updates.splitlines())
-        except self.py3.CommandError:
-            return None
+        except self.py3.CommandError as ce:
+            # yay returns 1 if there are no updates.
+            return 0 if ce.error_code == 1 else None
 
     def _get_paru_updates(self):
         try:
             updates = self.py3.command_output(["paru", "-Qua"])
             return len(updates.splitlines())
-        except self.py3.CommandError:
-            return None
+        except self.py3.CommandError as ce:
+            return None if ce.error else 0
+
+    def _get_pikaur_updates(self):
+        try:
+            updates = self.py3.command_output(["pikaur", "-Qua"])
+            return len(updates.splitlines())
+        except self.py3.CommandError as ce:
+            return None if ce.error else 0
 
     def arch_updates(self):
         pacman, aur, total, full_text = None, None, None, ""

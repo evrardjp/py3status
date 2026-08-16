@@ -1,3 +1,242 @@
+version 3.64 (2026-07-21)
+* core: rework py3status logging (#2333), by lasers
+* core, py3: integrate standard logging library (#2232), by lasers
+* core: fix debug mode outputs valid json (closes #2309) (#2310), by Valdur Kana
+* project: drop EOL python 3.9, add python 3.14 (#2311), by lasers
+* project: fix black + python 3.9 (#2316), by lasers
+* project: add zizmor gh action security fixes and audit ci (#2337)
+* project: update hatch for virtualenv 21 (#2323), by lasers
+* project: add dependabot.yml
+* project: use lint-ignore (#2300), by lasers
+* parse_config: add timeout to file --mime-encoding subprocess call (#2318), by Nadzeya Hutsko
+* py3: remove unused storage_items() (#2335), by lasers
+* new module: librelinkup to monitor indicators of diabates (#2317), by lasers
+* argparser: correctly detect i3 (#2308), by aguilbau
+* argparsers: correctly detect sway (#2315), by lasers
+* air_quality module: location based on ip if set to None (#2306), by aguilbau
+* external_script module: always pass a string to safe_format (#2320), by Kevin Pulo
+* google_calendar module: add active placeholder to use in format event (#2301), by Václav Kubernát
+* google_calendar module: drop inconsistent dateutil (#2336)
+* google_calendar module: update code to recent dependencies for newer python (#2334)
+* netdata module: skip first run to not display incorrect data on startup (#2304), by aguilbau
+* pomodoro module: add cycles threshold feature (#2313), by Pramod Tenacious
+* sysdata module: compile ZFS_SIZE_REGEX regex only once per module load instead of every update cycle. (#2329), by Valdur Kana
+* sysdata module: fix picking last matching temp sensor instead of the preferred one (#2330), by donob4n
+* vpn_status module: better VPN detection - prevent libvirt false-positive (#2322), by Joey Holtzman
+* window module: cleanup i3ipc mode _focused_workspace was updated on every workspace switch, but never read (#2326), by Valdur Kana
+
+version 3.63 (2025-11-19)
+* build: update hatch to the latest version (#2295), by Joey Holtzman
+* docs: add scroll example (#2292), by Isidro
+* project: bump minimal version of hatchling* moc module: fix type mismatch in moc_data (#2288), by Joan Bruguera Micó
+* conky module: update ignored_conky_outputs (#2298), by lasers
+* dnf_updates: new module from scratch replaces fedora_updates (#2291), by lasers
+* lm_sensors module: update broken json parser (#2289), by lasers
+* playerctl module: Ensure duration is always an integer (#2287), by Joey Holtzman
+* playerctl module: remove default title escape (#2294), by Joey Holtzman
+* timer module: add command parameter (#2293), by Paul Doidge
+* weather_own module: implemented onecall 401 failure fallback (#2296), by Jacotsu
+
+version 3.62 (2025-05-24)
+* core: fix usage of deprecated pkg_resources to the @sdelafond (#2286)
+* py3: add new helper: get_replacements_list (#2242), by lasers
+* conky module: add fallback delete parameter for py3.11 or less (#2275), by lasers
+* external_script module: adjust how urgent is specified (#2283), by Kevin Pulo
+* external_script module: allow scripts to specify urgent (#2282), by Kevin Pulo
+* getjson module: fix examples (#2278), by lasers
+* mpris module: implement track number support (#2280), by James Walker
+* mpris module: use new helper: get_replacements_list introduced with (#2242) (#2284), by Valdur Kana
+* tests: stop warning py3status/tests/test_module_load.py:5 (#2276), by lasers
+* whatismyip module: add an example with more url_geo choices (#2277), by lasers
+* xsel module: fix TypeError (#2279), by Eduardo Suarez-Santana
+
+version 3.61 (2024-12-05)
+* argparsers: pgrep i3 with shmlog (#2272), by lasers
+* modules: fix SyntaxWarning for python 3.12+ thx to @sdelafond (#2274)
+* conky module: fix tempfile and ignore new output (#2273), by ntorresalberto
+* mpris module: hide all non can_play players (#2267), by Valdur Kana
+* playerctl module: gi.require_version notification fix (#2270), by Valdur Kana
+
+version 3.60 (2024-10-24)
+* THANKS to Valdur Kana and @lasers for their long and continued efforts in improving py3status!
+* core: drop EOL python 3.8 and add new 3.13 to CI (#2266)
+* external_script module: add composite placeholder (#2263), by lasers
+* hddtemp module: remove deprecated telnetlib dependency (fixes #2261) (#2262), by Valdur Kana
+* kdeconnector module: replace pydbus with dbus-python (#2264), by Valdur Kana
+* mpris module: improve documentation (#2257), by Valdur Kana
+* playerctl module: hide non-can-play players and use chrome and chromium as default value. (#2256), by Valdur Kana
+* playerctl module: list python-gobject as dependency (#2258), by Joey Holtzman
+* wwan module: replace pydbus with dbus-python (#2265), by Valdur Kana
+
+version 3.59 (2024-08-02)
+* core: strip whitespaces from OUTPUT, OUTPUT_PART events (#2245), by lasers
+* ci(ruff): use new ruff check path command (#2253)
+* external_script module: fix clicking on parts of message thx to @lasers (#2254)
+* mpris module: kdeconnect mpris interface will skip identity cache, because mobile device can run different media players (#2251), by Valdur Kana
+
+version 3.58 (2024-05-31)
+* conky module: skip invalid conky errors (#2248), by lasers
+* weather_owm module: switch to 3.0 API endpoint as 2.5 is deprecated (#2249)
+
+version 3.57 (2024-03-26)
+* docs: explain how to serve mkdocs locally (#2239), by Lujeni
+* add CodeQL workflow for GitHub code scanning (#2159), by lgtm-com[bot]
+* fmt: fix newer black
+* backlight module: add brightnessctl support (#2233), by Gabriele Fioco
+* conky module: workaround upstream issues/1479 (#2238), by ntorresalberto
+* volume_status module: fix for default source with pamixer (#2240), by oceyral
+
+version 3.56 (2024-01-28)
+* remove audio modules in favor of playerctl (#2231), by lasers
+* new module dexcom:  display glucose readings from your Dexcom CGM system (#2229), by lasers
+* arch_updates module: hourly cache_timeout, add a note about alpm-hooks (#2219), by lasers
+* volume_status module: pamixer fix command if device is 0 (#2230), by Václav Kubernát
+* volume_status module: pamixer: Use default device if none specified (#2228), by Václav Kubernát
+
+version 3.55 (2024-01-12)
+* pkg: add dbus tag to pull dependencies 'pip install py3status[dbus]'
+* pkg: drop eol python 3.7 support, add python 3.12
+* pkg: pull setuptools for 3.12
+* docs(build): move away from readthedocs and switch to automatic github pages (#2216)
+* docs(config): add favicon and rename the site
+* readme: drop readthedocs build status
+* docs: fix broken 404 urls (#2223), by lasers
+* arch_updates module: update auracle from sync to outdated (#2220), by mlmatlock
+* bluetooth module: reinitialize dbus to fix after sleep behavior (#2221), by lasers
+* lm_sensors module: fix invalid json if specified more than one chip (#2226), by lasers
+* nvidia_smi module: fix --list-properties (#2225), by lasers
+* vpn_status module: add formatters for displaying IP addresses of VPNs (#2227), by Joey Holtzman
+
+version 3.54 (2023-10-13)
+* arch_updates module: handle yay return code better when there are no updates (#2214), by Geoff Liu
+* arch_updates module: make it more responsive to system updates (#2215), by Geoff Liu
+* battery_level module: fix code style
+
+version 3.53 (2023-09-10)
+* argparser: remove deprecated interval option (#2210), by lasers
+* new module playerctl: control players supported by playerctl (#2211), by Joey Holtzman
+
+version 3.52 (2023-07-29)
+* IMPORTANT: the project has moved from setuptools to pyproject.toml and hatch
+* IMPORTANT: gevent support is now deprecated and removed
+* core: drop gevent support
+
+version 3.51 (2023-06-27)
+* NEW: thanks to Andreas Grapentin, py3status can now run in lots of other containers (tmux, term, dzen2, lemonbar...)
+* IMPORTANT: modules are moving away from the obsolete pydbus library
+* core: implement handling of output_format in py3status for i3bar, dzen2, xmobar, lemonbar, tmux, term, none (#2104), by Andreas Grapentin
+* core: autodetect output_format (#2202), by lasers
+* fix(module): report module post_config_hook errors thx to @lasers (#2208)
+* docs(user): add a section to specify that modules dependencies are up to the users
+* docs(mkdocs): drop mkdocs-simple-hooks closes #2195
+* docs: fix two DeprecationWarning (#2191), by lasers
+* docs(audiosink): fix screenshots (#2194), by lasers
+* docs(autodoc): remove dead code thx to @lasers, closes #2183 (#2193)
+* arch_updates module: add support for pikaur (#2182), by vim
+* arch_updates module: remove cower support (gone) (#2190), by lasers
+* backlight module: drop pydbus, switch to dbus-python
+* bluetooth module: report battery percentage if available (#2185), by Alex Tsitsimpis
+* clock module: added timezone information to times implicitly using local system timezone (#2197), by Andreas Grapentin
+* clock module: minor patch to get the local timezone. (#2189), by Josh Sixsmith
+* diskdata module: fix variable init type
+* diskdata module: make module work on FreeBSD (#2200), by Björn Busse
+* mpd_status module: fix UnboundLocalError (#2199), by Björn Busse
+* ns_checker module: replace query() with resolve() (#2207), by Björn Busse
+* systemd module: drop pydbus, switch to dbus-python
+* vpn_status module: drop pydbus, switch to dbus-python
+
+version 3.50 (2023-04-17)
+* update alpine install doc (#2176), by raspbeguy
+* battery_level module: fix invalid indexing, skip batteries with unavailable info (#2180), by lasers
+* vpn_status module: add wireguard support (#2181), by javiertury
+
+version 3.49 (2023-02-17)
+* do_not_disturb module: use 'makoctl mode' to check current mode. (#2172), by Valdur Kana
+* google_calendar module: add support to configure which google calendar will be used (#2174), by Alex Thomae
+
+version 3.48 (2023-01-14)
+* IMPORTANT: bluetooth module has been replaced by the bluetooth2 code, please migrate
+* python: drop py 3.6 from CI and bump 3.11 (#2166)
+* battery_level module: allow icon to not use charging_character (#2158), by Kevin Pulo
+* bluetooth module: replaced by bluetooth2 as announced on 2022-10
+* check_tcp module: add IPv6 support (#2167), by Björn Busse
+* clock module: migrate to standard zoneinfo with 3.7, 3.8 support. (#2155), by Valdur Kana
+* events: change the reading timeout to infinity (#2153), by Austin Lund
+* kdeconnector module: Active notifications were always 1. (#2170), by Valdur Kana
+* kdeconnector module: refactor to use dbus signals to update module (#2168), by Valdur Kana
+* kdeconnector module: show cell network type and strength. (#2162) (#2163), by Valdur Kana
+* mpris module: fix error self.parent on Py3status module not found. (#2169), by Valdur Kana
+* timewarrior module: remove dependency on dateutil (#2161), by Rasmus Rendal
+* volume_status module: amixer scontrols uses device and card parameter. (#2152), by Valdur Kana
+* volume_status module: deprecate start_delay parameter
+* volume_status module: smarter initialization logic with retry, remove start_delay setting (#2165), by Joan Bruguera
+* window module: window without title will not produce error on i3msg mode, by Valdur Kana* core: add inhibition timer on misbehaving signals
+
+version 3.47 (2022-10-02)
+* INFORMATION: the upcoming bluetooth module has been merged as bluetooth2, users are encouraged to switch
+* core: simpler logic to inhibit out of order signaling (#2147)
+* formatter: add escape command to escape html, thx to lasers
+* new module from scratch: bluetooth2 (#2114), by lasers
+* mpris module: different players can use chromium busname, skip cache, by Valdur Kana
+* taskwarrior module: add report parameter (#2141), by Evan Chen
+* volume_status module: autoselect channel on amixer backend (#2143), by lasers
+
+version 3.46 (2022-08-25)
+* INFORMATION: we plan to replace the bluetooth module with a more flexible one in coming releases (see #2114)
+* core: use git package for logging git commit information if available (#2138), by Austin Lund
+* docs: add Alpine Linux installation instructions (#2129), by raspbeguy
+* new audiosink module: switch between pulseaudio sinks from your bar (#2137), by Jens Brandt
+* sysdata module: ignore ZFS ARC cache in memory usage (#2131), by anarcat
+* volume_status module: add start_delay to address issue #2136 (#2139)
+
+version 3.45 (2022-06-16)
+* official python3.6 support removed
+* mail module: fix pathlib adoption (#2125), by Hunter Blanks
+* twitch module: migrate to new Twitch API, fix #2123 (#2124), by Julian Picht
+* volume_status module: use mapped volume with amixer backend. (#2128), by Jose Riha
+
+version 3.44 (2022-04-22)
+* IMPORTANT: python3.6 support will be removed on next release
+* core: handle SIGTSTP/SIGCONT better for after sleep freezes
+* formatter: stop escaping html characters on pango markup (#2122), by lasers
+* module_test: add clear_timeout_due (#2119), by lasers
+* udev monitor: implement udev events throttling with warnings
+* google_calendar module: escape html on event summary for pango
+* mpris module: add player_shortname placeholder for displaying player busname (#2120), by Valdur Kana
+* xrandr module: fix missing " at the end of documentation line. (#2121), by Valdur Kana
+
+version 3.43 (2022-04-01)
+* core: rework SIGSTP inhibition to support both #2068 and #2107
+* formatter: pango markup should escape all html character
+* py3.safe_format: add information about invalid format
+* py3.safe_format: implement a generic max_width parameter
+* requirements: fix click dependency with black
+* udev monitor: don't trigger actions when i3bar refresh is stopped
+* weather_owm module: dont use onecall for better current day forecast (#2112)
+
+version 3.42 (2022-03-14)
+* core: fix root cause of negative update_due (#2109), by Valdur Kana
+* external_script module: add option 'convert_numbers' to preserve number formatting (#2101), by Nicolas Kuttler
+* khal_calendar module: add option to limit the number of returned calendar entries (#2103), by Andreas Grapentin
+* mpris module: total rework with bug fixes (#2077), by Valdur Kana
+* weather_own module: fix onecall when city is specified thx to @mlmatlock
+
+version 3.41 (2022-02-27)
+* core: drop and log negative new_update_due which causes high cpu load and endless loop (closses #2085) (#2092), by Valdur Kana
+* core: switch from time.perf_counter to time.monotonic (#2099)
+* core: timeout due to return something >= 0 instead of None
+* new option py3status.stop_signal to disable i3bar stop/resume (#2095)
+* arch_updates module: paru exits with a non-zero status if there are no updates (#2098), by Stefan G
+* battery_level module: fallback to power_now if no current_now
+* events: fix pydevd.debugger first click caused "JSONDecodeError: Expecting value: line 1 column 2 (char 1)". (closes #2090) (#2091), by Valdur Kana
+* net_iplist module: support parsing iface name with "@" symbol (#2083), by Yikai Zhao
+* pomodoro module: pyglet and pygame are no longer needed after the merge of #1770 (#2094), by Stefan G
+* scratchpad module: workaround for i3ipc 2.2.1 not finding leaves() in sway (#2088), by Valdur Kana
+* sysdata module: add tctl sensor (#2082), by lasers
+* velib_metropole module: drop obsolete module
+* weather_owm module: fix forecast by using new onecall api endpoint (#2097)
+* window module: i3ipc backend uses incoming event data and relies less on get_tree.focused() data. (#2087), by Valdur Kana
+
 version 3.40 (2021-11-08)
 * README: update readthedocs links to new documentation thx to @oceyral
 * i3 contrib page: update readthedocs links to new documentation

@@ -22,16 +22,13 @@ from platform import uname
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     format = "{system} {release}"
 
     class Meta:
-        deprecated = {
-            "remove": [{"param": "cache_timeout", "msg": "obsolete parameter"}]
-        }
+        deprecated = {"remove": [{"param": "cache_timeout", "msg": "obsolete parameter"}]}
 
     def uname(self):
         keys = ["system", "node", "release", "version", "machine", "processor"]

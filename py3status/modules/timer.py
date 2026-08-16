@@ -11,6 +11,7 @@ Button 1 starts/pauses the countdown.
 Button 2 resets timer.
 
 Configuration parameters:
+    command: shell command to run when the timer ends (default None)
     format: display format for this module (default 'Timer {timer}')
     sound: play sound file path when the timer ends (default None)
     time: number of seconds to start countdown with (default 60)
@@ -49,10 +50,10 @@ from threading import Timer
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
+    command = None
     format = "Timer {timer}"
     sound = None
     time = 60
@@ -77,11 +78,13 @@ class Py3status:
         if self.sound:
             self.py3.play_sound(self.sound)
             self.alarm = True
+        if self.command:
+            self.py3.command_run(self.command)
         self.timer()
 
     def timer(self):
         if self.running or self.done:
-            t = int(self.end_time - time.perf_counter())
+            t = int(self.end_time - time.monotonic())
             if t <= 0:
                 t = 0
         else:
@@ -125,6 +128,11 @@ class Py3status:
             response["urgent"] = True
         return response
 
+    def kill(self):
+        # remove any timer
+        if self.alarm_timer:
+            self.alarm_timer.cancel()
+
     def on_click(self, event):
         deltas = {"hours": 3600, "minutes": 60, "seconds": 1}
         index = event["index"]
@@ -143,7 +151,7 @@ class Py3status:
             if self.running:
                 # pause timer
                 self.running = False
-                self.time_left = int(self.end_time - time.perf_counter())
+                self.time_left = int(self.end_time - time.monotonic())
                 self.color = self.py3.COLOR_DEGRADED
                 if self.alarm_timer:
                     self.alarm_timer.cancel()
@@ -151,9 +159,9 @@ class Py3status:
                 # start/restart timer
                 self.running = True
                 if self.time_left:
-                    self.end_time = time.perf_counter() + self.time_left
+                    self.end_time = time.monotonic() + self.time_left
                 else:
-                    self.end_time = time.perf_counter() + self.time
+                    self.end_time = time.monotonic() + self.time
                 self.cache_offset = self.end_time % 1
                 self.color = self.py3.COLOR_GOOD
                 if self.alarm_timer:
@@ -187,11 +195,6 @@ class Py3status:
                 self.time_left = t
             else:
                 self.time = t
-
-    def kill(self):
-        # remove any timer
-        if self.alarm_timer:
-            self.alarm_timer.cancel()
 
 
 if __name__ == "__main__":

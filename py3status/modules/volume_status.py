@@ -12,11 +12,11 @@ Configuration parameters:
     card: Card to use. amixer supports this. (default None)
     channel: channel to track. Default value is backend dependent.
         (default None)
-    command: Choose between "amixer", "pamixer" or "pactl".
+    command: Choose between "amixer", "pamixer", "pactl" or "wpctl".
         If None, try to guess based on available commands.
         (default None)
     device: Device to use. Defaults value is backend dependent.
-        "aplay -L", "pactl list sinks short", "pamixer --list-sinks"
+        "aplay -L", "pactl list sinks short", "pamixer --list-sinks", "wpctl status -n"
         (default None)
     format: Format of the output.
         (default '[\\?if=is_input 😮|♪]: {percentage}%')
@@ -25,7 +25,7 @@ Configuration parameters:
     is_input: Is this an input device or an output device?
         (default False)
     max_volume: Allow the volume to be increased past 100% if available.
-        pactl and pamixer supports this. (default 120)
+        pactl, pamixer and wpctl support this. (default 120)
     thresholds: Threshold for percent volume.
         (default [(0, 'bad'), (20, 'degraded'), (50, 'good')])
     volume_delta: Percentage amount that the volume is increased or
@@ -44,6 +44,7 @@ Color options:
 Requires:
     alsa-utils: an alternative implementation of linux sound support
     pamixer: pulseaudio command-line mixer like amixer
+    wireplumber: provides wpctl, the PipeWire session manager control tool
 
 Notes:
     If you are changing volume state by external scripts etc and
@@ -80,8 +81,10 @@ mute
 {'color': '#FF0000', 'full_text': u'\u266a: muted'}
 """
 
-import re
 import math
+import re
+from time import sleep
+
 from py3status.exceptions import CommandError
 
 STRING_ERROR = "invalid command `{}`"
@@ -113,12 +116,16 @@ class Amixer(Audio):
     def setup(self, parent):
         if self.card is None:
             self.card = "0"
-        if self.channel is None:
-            self.channel = "Capture" if self.is_input else "Master"
         if self.device is None:
             self.device = "default"
+        if self.channel is None:
+            controls = self.parent.py3.command_output(
+                ["amixer", "-c", self.card, "-D", self.device, "scontrols"]
+            ).splitlines()
+            self.channel = controls[-abs(int(self.is_input))].split("'")[1::2][0]
         self.cmd = [
             "amixer",
+            "-M",
             "-q",
             "-c",
             self.card,
@@ -165,8 +172,13 @@ class Amixer(Audio):
 
 class Pamixer(Audio):
     def setup(self, parent):
-        is_input = "--source" if self.is_input else "--sink"
-        self.cmd = ["pamixer", "--allow-boost", is_input, self.device or "0"]
+        if self.device is not None:
+            dev_target = ["--source" if self.is_input else "--sink", self.device]
+        elif self.is_input:
+            dev_target = ["--default-source"]
+        else:
+            dev_target = []
+        self.cmd = ["pamixer", "--allow-boost"] + dev_target
 
     def get_volume(self):
         try:
@@ -226,7 +238,7 @@ class Pactl(Audio):
         device_id = None
 
         # Find the default device for the device type
-        default_dev_pattern = re.compile(fr"^Default {self.device_type_cap}: (.*)$")
+        default_dev_pattern = re.compile(rf"^Default {self.device_type_cap}: (.*)$")
         output = self.command_output(["pactl", "info"])
         for info_line in output.splitlines():
             default_dev_match = default_dev_pattern.match(info_line)
@@ -287,9 +299,7 @@ class Pactl(Audio):
             change = f"{self.max_volume}%"
         else:
             change = f"+{delta}%"
-        self.run_cmd(
-            ["pactl", "--", f"set-{self.device_type}-volume", self.device, change]
-        )
+        self.run_cmd(["pactl", "--", f"set-{self.device_type}-volume", self.device, change])
 
     def volume_down(self, delta):
         self.run_cmd(
@@ -304,6 +314,118 @@ class Pactl(Audio):
 
     def toggle_mute(self):
         self.run_cmd(["pactl", f"set-{self.device_type}-mute", self.device, "toggle"])
+
+
+class Wpctl(Audio):
+    def setup(self, parent):
+        self.device_re = re.compile(r"(?P<id>\d+)\.\s+(?P<name>.+)$")
+        self.volume_re = re.compile(r"\[vol:\s*(?P<volume>[0-9.]+)(?:\s+(?P<muted>MUTED))?\]")
+
+        self.max_volume = f"{self.max_volume / 100}"
+
+        self.selected_device_category = "Sources" if self.is_input else "Sinks"
+        if not self.device:
+            self.selected_device_id = (
+                "@DEFAULT_AUDIO_SOURCE@" if self.is_input else "@DEFAULT_AUDIO_SINK@"
+            )
+
+        # Default audio sink is always present, even if all sinks are disabled (as null device)
+        # empty response indicates that wpctl isn't yet fully loaded
+        volume = self.command_output(["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"])
+        if volume == "":
+            raise Exception("wpctl: no data for default audio sink found")
+
+    def get_volume(self):
+        device = self._get_selected_device()
+        if not device:
+            return None, None
+        return device["volume"], device["muted"]
+
+    def volume_up(self, delta):
+        device_id = self._get_selected_device_id()
+        if device_id:
+            # wpctl clamps to 100% unless an explicit limit is passed
+            self.run_cmd(["wpctl", "set-volume", "-l", self.max_volume, device_id, f"{delta}%+"])
+
+    def volume_down(self, delta):
+        device_id = self._get_selected_device_id()
+        if device_id:
+            self.run_cmd(["wpctl", "set-volume", device_id, f"{delta}%-"])
+
+    def toggle_mute(self):
+        device_id = self._get_selected_device_id()
+        if device_id:
+            self.run_cmd(["wpctl", "set-mute", device_id, "toggle"])
+
+    def _get_selected_device_id(self):
+        if not self.device:
+            return self.selected_device_id
+        device = self._get_selected_device()
+        return device["id"] if device else None
+
+    def _get_wpctl_status_output(self):
+        return self.command_output(["wpctl", "status", "-n"])
+
+    def _get_selected_device(self):
+        if not self.device:
+            return self._get_default_device()
+
+        status_output = self._get_wpctl_status_output()
+        for device in self._get_audio_devices(status_output):
+            if device["name"] == self.device:
+                return device
+        return None
+
+    def _get_audio_devices(self, status):
+        devices = []
+
+        for chunk in status.split("\n\n"):
+            lines = chunk.splitlines()
+            if not lines or lines[0].strip() != "Audio":
+                continue
+
+            in_category = False
+            for raw_line in lines[1:]:
+                line = raw_line.lstrip(" │├─")
+                if not line:
+                    continue
+                if line.endswith(":"):
+                    in_category = line[:-1] == self.selected_device_category
+                    continue
+                if not in_category:
+                    continue
+
+                volume_match = self.volume_re.search(line)
+                if not volume_match:
+                    continue
+                match = self.device_re.match(line[: volume_match.start()].strip(" *"))
+                if not match:
+                    continue
+
+                devices.append(
+                    {
+                        "id": match.group("id"),
+                        "muted": bool(volume_match.group("muted")),
+                        "name": match.group("name"),
+                        "volume": float(volume_match.group("volume")) * 100,
+                    }
+                )
+            break
+        return devices
+
+    def _get_default_device(self):
+        try:
+            parts = (
+                self.command_output(["wpctl", "get-volume", self.selected_device_id])
+                .lower()
+                .split()
+            )
+            return {
+                "volume": float(parts[1]) * 100,
+                "muted": "[muted]" in parts,
+            }
+        except (ValueError, IndexError):
+            return None
 
 
 class Py3status:
@@ -348,17 +470,32 @@ class Py3status:
                     "param": "threshold_degraded",
                     "msg": "obsolete set using thresholds parameter",
                 },
+                {
+                    "param": "start_delay",
+                    "msg": "obsolete parameter",
+                },
             ],
+        }
+
+        update_config = {
+            "update_placeholder_format": [
+                {
+                    "placeholder_formats": {
+                        "percentage": ":.0f",
+                    },
+                    "format_strings": ["format", "format_muted"],
+                }
+            ]
         }
 
     def post_config_hook(self):
         if not self.command:
-            commands = ["pamixer", "pactl", "amixer"]
+            commands = ["pamixer", "pactl", "amixer", "wpctl"]
             # pamixer, pactl requires pulseaudio to work
             if not self.py3.check_commands(["pulseaudio", "pipewire"]):
                 commands = ["amixer"]
             self.command = self.py3.check_commands(commands)
-        elif self.command not in ["amixer", "pamixer", "pactl"]:
+        elif self.command not in ["amixer", "pamixer", "pactl", "wpctl"]:
             raise Exception(STRING_ERROR.format(self.command))
         elif not self.py3.check_commands(self.command):
             raise Exception(COMMAND_NOT_INSTALLED.format(self.command))
@@ -371,8 +508,20 @@ class Py3status:
         if self.device is not None:
             self.device = str(self.device)
 
-        self.backend = globals()[self.command.capitalize()](self)
+        self._init_backend()
         self.color_muted = self.py3.COLOR_MUTED or self.py3.COLOR_BAD
+
+    def _init_backend(self):
+        # attempt it a few times since the audio service may still be loading during startup
+        for i in range(6):
+            try:
+                self.backend = globals()[self.command.capitalize()](self)
+                return
+            except Exception:  # noqa e722
+                # try again later (exponential backoff)
+                sleep(0.5 * 2**i)
+
+        self.backend = globals()[self.command.capitalize()](self)
 
     def volume_status(self):
         perc, muted = self.backend.get_volume()
@@ -419,6 +568,14 @@ if __name__ == "__main__":
     """
     Run module in test mode.
     """
+    config = {
+        "format": r"[\?if=is_input SOURCE|SINK] \[{command}\] \[{device}\] " + Py3status.format,
+        "format_muted": r"[\?if=is_input SOURCE|SINK] \[{command}\] \[{device}\] \[{percentage}%\] "
+        + Py3status.format_muted,
+        "command": "wpctl",
+        # "device": "alsa_output.pci-0000_00_1b.0.analog-stereo",
+        # "is_input": True,
+    }
     from py3status.module_test import module_test
 
-    module_test(Py3status)
+    module_test(Py3status, config=config)

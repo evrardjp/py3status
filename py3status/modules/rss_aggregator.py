@@ -49,13 +49,13 @@ SAMPLE OUTPUT
 {'full_text': 'Feed: 488'}
 """
 
-import requests
 import json
+
+import requests
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     aggregator = "owncloud"
@@ -74,33 +74,11 @@ class Py3status:
         if self.user is None or self.password is None:
             raise ValueError("user and password must be provided")
 
-    def rss_aggregator(self):
-        if self.aggregator == "owncloud":
-            rss_count = self._get_count_owncloud()
-        elif self.aggregator == "ttrss":
-            rss_count = self._get_count_ttrss()
-
-        self._cached = self._cached if rss_count is None else rss_count
-
-        response = {
-            "cached_until": self.py3.time_in(self.cache_timeout),
-            "full_text": self.py3.safe_format(self.format, {"unseen": self._cached}),
-        }
-
-        if rss_count is None:
-            response["color"] = self.py3.COLOR_ERROR or self.py3.COLOR_BAD
-        elif rss_count != 0:
-            response["color"] = self.py3.COLOR_NEW_ITEMS or self.py3.COLOR_GOOD
-
-        return response
-
     def _get_count_owncloud(self):
         try:
             rss_count = 0
             api_url = f"{self.server}/index.php/apps/news/api/v1-2/"
-            r = requests.get(
-                api_url + "feeds", auth=(self.user, self.password), timeout=10
-            )
+            r = requests.get(api_url + "feeds", auth=(self.user, self.password), timeout=10)
             for feed in r.json()["feeds"]:
                 if (
                     (not self.feed_ids and not self.folder_ids)
@@ -120,15 +98,11 @@ class Py3status:
             api_url = f"{self.server}/api/"
             r = requests.post(
                 api_url,
-                data=json.dumps(
-                    {"op": "login", "user": self.user, "password": self.password}
-                ),
+                data=json.dumps({"op": "login", "user": self.user, "password": self.password}),
             )
             sid = r.json()["content"]["session_id"]
             if not self.feed_ids and not self.folder_ids:
-                r = requests.post(
-                    api_url, data=json.dumps({"sid": sid, "op": "getUnread"})
-                )
+                r = requests.post(api_url, data=json.dumps({"sid": sid, "op": "getUnread"}))
                 rss_count = r.json()["content"]["unread"]
             else:
                 for folder in self.folder_ids:
@@ -159,6 +133,27 @@ class Py3status:
 
         except:  # noqa e722
             return None
+
+    def rss_aggregator(self):
+        rss_count = None
+        if self.aggregator == "owncloud":
+            rss_count = self._get_count_owncloud()
+        elif self.aggregator == "ttrss":
+            rss_count = self._get_count_ttrss()
+
+        self._cached = self._cached if rss_count is None else rss_count
+
+        response = {
+            "cached_until": self.py3.time_in(self.cache_timeout),
+            "full_text": self.py3.safe_format(self.format, {"unseen": self._cached}),
+        }
+
+        if rss_count is None:
+            response["color"] = self.py3.COLOR_ERROR or self.py3.COLOR_BAD
+        elif rss_count != 0:
+            response["color"] = self.py3.COLOR_NEW_ITEMS or self.py3.COLOR_GOOD
+
+        return response
 
 
 if __name__ == "__main__":

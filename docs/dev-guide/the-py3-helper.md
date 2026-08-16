@@ -71,7 +71,7 @@ If a string is passed then that command will be checked for.
 
 ### command_output(command, shell=False, capture_stderr=False, localized=False)
 
-Run a command and return its output as unicode.
+Run a command and return its output as text.
 The command can either be supplied as a sequence or string.
 
 :param command: command to run can be a str or list
@@ -297,10 +297,6 @@ function is a helper for this second case.
 
 Check if item is a Composite and return True if it is.
 
-### is_gevent()
-
-Checks if gevent monkey patching is enabled or not.
-
 ### is_my_event(event)
 
 Checks if an event triggered belongs to the module receiving it.  This
@@ -313,7 +309,10 @@ checking.
 ### log(message, level='info')
 
 Log the message.
-The level must be one of LOG_ERROR, LOG_INFO or LOG_WARNING
+The level can be any valid logging level name (e.g. "error", info",
+"warning") or integer (e.g. `10` -> `logging.INFO``). Constants
+LOG_ERROR, LOG_INFO, and LOG_WARNING are also supported.
+Specifying `name` uses a logger with a given name or module_name if None.
 
 ### notify_user(msg, level='info', rate_limit=5, title=None, icon=None)
 
@@ -383,7 +382,7 @@ be added automatically following the convention:
 
 returns: HttpResponse
 
-### safe_format(format_string, param_dict=None, force_composite=False, attr_getter=None)
+### safe_format(format_string, param_dict=None, force_composite=False, attr_getter=None, max_width=None)
 
 Parser for advanced formatting.
 
@@ -436,6 +435,9 @@ returned.
 attr_getter is a function that will when called with an attribute name
 as a parameter will return a value.
 
+max_width lets you to control the total max width of 'full_text' the
+module is allowed to output on the bar.
+
 ### stop_sound()
 
 Stops any currently playing sounds for this module.
@@ -448,14 +450,6 @@ If key is not supplied then all values for the module are removed.
 ### storage_get(key)
 
 Retrieve a value for the module.
-
-### storage_items()
-
-Return key, value pairs of the stored data for the module.
-
-Keys will contain the following metadata entries:
-- '_ctime': storage creation timestamp
-- '_mtime': storage last modification timestamp
 
 ### storage_keys()
 

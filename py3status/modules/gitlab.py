@@ -65,17 +65,14 @@ STRING_ERROR_AUTH = "missing auth_token"
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     auth_token = None
     button_open = 1
     button_refresh = 2
     cache_timeout = 900
-    format = (
-        r"[{name} ][[{open_issues_count}][\?soft /]" "[{open_merge_requests_count}]]"
-    )
+    format = r"[{name} ][[{open_issues_count}][\?soft /]" "[{open_merge_requests_count}]]"
     project = "gitlab-org/gitlab-ce"
     thresholds = []
 

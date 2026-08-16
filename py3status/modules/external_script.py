@@ -3,8 +3,10 @@ Display output of a given script.
 
 Display output of any executable script set by `script_path`. Only the first
 two lines of output will be used. The first line is used as the displayed
-text. If the output has two or more lines, the second line is set as the text
-color (and should hence be a valid hex color code such as #FF0000 for red).
+text. If the output has two or more lines, the second line contains additional
+information as whitespace separated tokens.  Valid tokens are:
+    `#rrggbb`: the text color as a hex color code (eg. `#FF0000` for red)
+    `urgent`: the word `urgent` to set the urgent flag
 The script should not have any parameters, but it could work.
 
 Configuration parameters:
@@ -12,6 +14,8 @@ Configuration parameters:
         (default None)
     cache_timeout: how often we refresh this module in seconds
         (default 15)
+    convert_numbers: convert decimal numbers to a numeric type
+        (default True)
     format: see placeholders below (default '{output}')
     localize: should script output be localized (if available)
         (default True)
@@ -23,6 +27,7 @@ Configuration parameters:
 Format placeholders:
     {lines} number of lines in the output
     {output} output of script given by "script_path"
+    {composite} composite output of script given by "script_path"
 
 Examples:
 ```
@@ -47,12 +52,12 @@ STRING_ERROR = "missing script_path"
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     button_show_notification = None
     cache_timeout = 15
+    convert_numbers = True
     format = "{output}"
     localize = True
     script_path = None
@@ -72,9 +77,12 @@ class Py3status:
             )
             output_lines = self.output.splitlines()
             if len(output_lines) > 1:
-                output_color = output_lines[1]
-                if re.search(r"^#[0-9a-fA-F]{6}$", output_color):
-                    response["color"] = output_color
+                words = output_lines[1].split()
+                for word in words:
+                    if re.search(r"^#[0-9a-fA-F]{6}$", word):
+                        response["color"] = word
+                    elif word == "urgent":
+                        response["urgent"] = True
         except self.py3.CommandError as e:
             # something went wrong show error to user
             output = e.output or e.error
@@ -91,19 +99,23 @@ class Py3status:
             #     format = "file is [\?if=output>10 big|small]"
             #     script_path = "cat /tmp/my_file | wc -l"
             # }
-            try:
-                output = int(output)
-            except ValueError:
+            if self.convert_numbers is True:
                 try:
-                    output = float(output)
+                    output = int(output)
                 except ValueError:
-                    pass
+                    try:
+                        output = float(output)
+                    except ValueError:
+                        pass
         else:
             output = ""
 
-        response["full_text"] = self.py3.safe_format(
-            self.format, {"output": output, "lines": len(output_lines)}
-        )
+        script_data = {
+            "output": output,
+            "lines": len(output_lines),
+            "composite": self.py3.safe_format(str(output)),
+        }
+        response["full_text"] = self.py3.safe_format(self.format, script_data)
         return response
 
     def on_click(self, event):

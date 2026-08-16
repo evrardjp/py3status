@@ -105,7 +105,7 @@ losers
 ]
 """
 
-INVALID_API_KEY = "invalid api_key"
+NO_API_KEY = "missing `api_key`"
 
 
 class Py3status:
@@ -115,14 +115,16 @@ class Py3status:
     api_key = None
     cache_timeout = 600
     format = "{format_coin}"
-    format_coin = r"{name} ${usd_price:.2f} [\?color=usd_percent_change_24h {usd_percent_change_24h:.1f}%]"
+    format_coin = (
+        r"{name} ${usd_price:.2f} [\?color=usd_percent_change_24h {usd_percent_change_24h:.1f}%]"
+    )
     format_coin_separator = " "
     markets = ["btc", "eth"]
     thresholds = [(-100, "bad"), (0, "good")]
 
     def post_config_hook(self):
         if not self.api_key:
-            self.py3.error(INVALID_API_KEY)
+            self.py3.error(NO_API_KEY)
 
         currency_options = [
             "_last_updated",
@@ -140,10 +142,7 @@ class Py3status:
                 convert.add(item.split("_", 1)[0])
         convert, markets = ",".join(convert), ",".join(self.markets)
 
-        self.headers = {
-            "Accepts": "applications/json",
-            "X-CMC_PRO_API_KEY": self.api_key,
-        }
+        self.headers = {"Accept": "application/json", "X-CMC_PRO_API_KEY": self.api_key}
         self.url = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes"
         self.url += f"/latest?convert={convert}&symbol={markets}"
 
@@ -151,17 +150,23 @@ class Py3status:
 
     def _get_coin_data(self):
         try:
-            cmc_data = self.py3.request(self.url, headers=self.headers).json()
-            data = []
-
-            for name, currency_data in cmc_data.get("data", {}).items():
-                quotes = currency_data.pop("quote", {})
-                quotes = {k.lower(): v for k, v in quotes.items()}
-                currency_data.update(self.py3.flatten_dict(quotes, delimiter="_"))
-                data.append(currency_data)
-
+            response = self.py3.request(self.url, headers=self.headers)
         except self.py3.RequestException:
-            data = []
+            return []
+
+        if response.status_code != 200:
+            error = getattr(response, "_error_message", None)
+            if error:
+                msg = f"HTTP {response.status_code} {error}"
+                self.py3.error(msg, self.py3.CACHE_FOREVER)
+
+        data = []
+        for currency_data in response.json().get("data", {}).values():
+            quotes = currency_data.pop("quote", {})
+            quotes = {k.lower(): v for k, v in quotes.items()}
+            currency_data.update(self.py3.flatten_dict(quotes, delimiter="_"))
+            data.append(currency_data)
+
         return data
 
     def coin_market(self):
@@ -180,9 +185,7 @@ class Py3status:
 
         return {
             "cached_until": self.py3.time_in(self.cache_timeout),
-            "full_text": self.py3.safe_format(
-                self.format, {"format_coin": format_coin}
-            ),
+            "full_text": self.py3.safe_format(self.format, {"format_coin": format_coin}),
         }
 
 

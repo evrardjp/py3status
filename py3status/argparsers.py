@@ -1,10 +1,9 @@
 import argparse
 import os
-import subprocess
 from pathlib import Path
+from platform import python_version
 from shutil import which
 
-from platform import python_version
 from py3status.version import version
 
 
@@ -18,11 +17,11 @@ def parse_cli_args():
     xdg_dirs_path = Path(os.environ.get("XDG_CONFIG_DIRS", "/etc/xdg"))
 
     # get window manager
-    with Path(os.devnull).open("w") as devnull:
-        if subprocess.call(["pgrep", "-x", "i3"], stdout=devnull) == 0:
-            wm = "i3"
-        else:
-            wm = "sway"
+    sock = os.environ.get('SWAYSOCK')
+    if sock and Path(sock).is_socket():
+        wm = "sway"
+    else:
+        wm = "i3"
 
     # i3status config file default detection
     # respect i3status' file detection order wrt issue #43
@@ -87,13 +86,6 @@ def parse_cli_args():
         "--debug",
         action="store_true",
         help="enable debug logging in syslog or log file if --log-file option is passed",
-    )
-    parser.add_argument(
-        "-g",
-        "--gevent",
-        action="store_true",
-        dest="gevent",
-        help="enable gevent monkey patching",
     )
     parser.add_argument(
         "-i",
@@ -164,9 +156,6 @@ def parse_cli_args():
         help="specify window manager i3 or sway",
     )
 
-    # deprecations
-    parser.add_argument("-n", "--interval", help=argparse.SUPPRESS)
-
     # parse options, command, etc
     options = parser.parse_args()
 
@@ -202,7 +191,6 @@ def parse_cli_args():
     options.include_paths = include_paths
 
     # defaults
-    del options.interval
     del options.print_version
     options.minimum_interval = 0.1  # minimum module update interval
     options.click_events = not options.__dict__.pop("disable_click_events")

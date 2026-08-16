@@ -77,7 +77,7 @@ mail {                                       #
                 'name': 'home',              # <----│----│----└── {home}
                 'user': 'lasers',            #      │    │
                 'password': 'kiss_my_butt!', #      │    │
-                'server': 'imap.gmail.com',  #      │    │ 
+                'server': 'imap.gmail.com',  #      │    │
                                              #  <---│----│ no filters to
                 'port': 993,                 #      │    │ search folders, use
                                              #      │    │ filters ['^INBOX$']
@@ -158,7 +158,7 @@ no_mail
 import mailbox
 import os
 from csv import reader
-from imaplib import IMAP4_SSL, IMAP4
+from imaplib import IMAP4, IMAP4_SSL
 from pathlib import Path
 
 STRING_MISSING = "missing {} {}"
@@ -215,9 +215,7 @@ class Py3status:
                         if mail == box.lower():
                             if "path" not in account:
                                 raise Exception(STRING_MISSING.format(mail, "path"))
-                            path = os.path.expandvars(
-                                Path(account["path"]).expanduser()
-                            )
+                            path = Path(os.path.expandvars(account["path"])).expanduser()
                             if not path.exists():
                                 path = f"path: {path}"
                                 raise Exception(STRING_MISSING.format(mail, path))
@@ -279,9 +277,7 @@ class Py3status:
                     except IMAP4.error:
                         pass
                 else:
-                    inbox = getattr(mailbox, account["box"])(
-                        account["path"], create=False
-                    )
+                    inbox = getattr(mailbox, account["box"])(account["path"], create=False)
                     count_mail = len(inbox)
                     inbox.close()
                 if "name" in account:

@@ -78,8 +78,7 @@ STRING_NOT_INSTALLED = "not installed"
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     cache_timeout = 10
@@ -99,9 +98,7 @@ class Py3status:
 
         properties = self.py3.get_placeholders_list(self.format_gpu)
         format_gpu = {x: ":.1f" for x in properties if "used_percent" in x}
-        self.format_gpu = self.py3.update_placeholder_formats(
-            self.format_gpu, format_gpu
-        )
+        self.format_gpu = self.py3.update_placeholder_formats(self.format_gpu, format_gpu)
 
         new_memory_properties = set()
         new_properties = {"memory.used", "memory.total"}
@@ -135,7 +132,7 @@ class Py3status:
             )
 
             for key in self.memory_properties:
-                value, unit_key = float(gpu[key]) * 1024 ** 2, key + "_unit"
+                value, unit_key = float(gpu[key]) * 1024**2, key + "_unit"
                 value, unit_value = self.py3.format_units(value, self.memory_unit)
                 gpu.update({key: value, unit_key: unit_value})
 
@@ -158,20 +155,19 @@ if __name__ == "__main__":
     from sys import argv
 
     if "--list-properties" in argv:
-        from sys import exit
         from json import dumps
         from subprocess import check_output
+        from sys import exit
 
         help_cmd = "nvidia-smi --help-query-gpu"
         help_data = check_output(help_cmd.split()).decode()
 
         new_properties = []
-        e = ["Default", "Exclusive_Thread", "Exclusive_Process", "Prohibited"]
         for line in help_data.splitlines():
             if line.startswith('"'):
                 properties = line.split('"')[1::2]
                 for name in properties:
-                    if name not in e:
+                    if ":" not in name:
                         new_properties.append(name)
 
         properties = ",".join(new_properties)
@@ -180,9 +176,10 @@ if __name__ == "__main__":
 
         new_gpus = []
         msg = "This GPU contains {} supported properties."
+        e = ["Not Supported", "N/A"]
         for line in gpu_data.splitlines():
             gpu = dict(zip(new_properties, line.split(", ")))
-            gpu = {k: v for k, v in gpu.items() if "[Not Supported]" not in v}
+            gpu = {k: v for k, v in gpu.items() if all(x not in v for x in e)}
             gpu["= " + msg.format(len(gpu))] = ""
             gpu["=" * (len(msg) + 2)] = ""
             new_gpus.append(gpu)

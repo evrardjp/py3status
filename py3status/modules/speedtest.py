@@ -130,13 +130,11 @@ import time
 from json import loads
 from threading import Thread
 
-
 STRING_NOT_INSTALLED = "not installed"
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     button_share = None
@@ -199,7 +197,7 @@ class Py3status:
 
     def _set_speedtest_data(self):
         # start
-        self.start_time = time.perf_counter()
+        self.start_time = time.monotonic()
         self.speedtest_data["elapsed"] = True
 
         try:
@@ -218,13 +216,13 @@ class Py3status:
 
         # end
         self.speedtest_data["elapsed"] = False
-        self.speedtest_data["elapsed_time"] = time.perf_counter() - self.start_time
+        self.speedtest_data["elapsed_time"] = time.monotonic() - self.start_time
         self.thread = None
 
     def speedtest(self):
         if self.speedtest_data.get("elapsed"):
             cached_until = 0
-            self.speedtest_data["elapsed_time"] = time.perf_counter() - self.start_time
+            self.speedtest_data["elapsed_time"] = time.monotonic() - self.start_time
         else:
             cached_until = self.py3.CACHE_FOREVER
             self.py3.storage_set("speedtest_data", self.speedtest_data)

@@ -14,6 +14,7 @@ Configuration parameters:
     format: display format for this module
         *(default '\?if=is_started [\?if=is_stopped \[\] moc|'
         '[\?if=is_paused \|\|][\?if=is_playing >] {title}]')*
+    replacements: specify a list/dict of string placeholders to modify (default None)
     sleep_timeout: when moc is not running, this interval will be used to
         allow one to refresh constantly with time placeholders and/or
         to refresh once every minute rather than every few seconds
@@ -72,13 +73,11 @@ stopped
 {'color': '#FF0000', 'full_text': '[] moc'}
 """
 
-
 STRING_NOT_INSTALLED = "not installed"
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     button_next = None
@@ -90,6 +89,7 @@ class Py3status:
         r"\?if=is_started [\?if=is_stopped \[\] moc|"
         r"[\?if=is_paused \|\|][\?if=is_playing >] {title}]"
     )
+    replacements = None
     sleep_timeout = 20
 
     def post_config_hook(self):
@@ -99,6 +99,7 @@ class Py3status:
         self.color_stopped = self.py3.COLOR_STOPPED or self.py3.COLOR_BAD
         self.color_paused = self.py3.COLOR_PAUSED or self.py3.COLOR_DEGRADED
         self.color_playing = self.py3.COLOR_PLAYING or self.py3.COLOR_GOOD
+        self.replacements_init = self.py3.get_replacements_list(self.format)
 
     def _get_moc_data(self):
         try:
@@ -109,22 +110,25 @@ class Py3status:
             is_started = False
         return is_started, data
 
+    def _organize_data(self, data):
+        temporary = {}
+        for line in data.splitlines():
+            category, value = line.split(": ", 1)
+            temporary[category.lower()] = value
+        return temporary
+
     def moc(self):
         is_paused = is_playing = is_stopped = None
         cached_until = self.sleep_timeout
         color = self.py3.COLOR_BAD
-        data = {}
 
         is_started, moc_data = self._get_moc_data()
 
         if is_started:
             cached_until = self.cache_timeout
+            moc_data = self._organize_data(moc_data)
 
-            for line in moc_data.splitlines():
-                category, value = line.split(": ", 1)
-                data[category.lower()] = value
-
-            self.state = data["state"]
+            self.state = moc_data["state"]
             if self.state == "PLAY":
                 is_playing = True
                 color = self.color_playing
@@ -135,19 +139,23 @@ class Py3status:
                 is_stopped = True
                 color = self.color_stopped
 
+        for x in self.replacements_init:
+            if x in moc_data:
+                moc_data[x] = self.py3.replace(moc_data[x], x)
+
+        moc_data.update(
+            {
+                "is_paused": is_paused,
+                "is_playing": is_playing,
+                "is_started": is_started,
+                "is_stopped": is_stopped,
+            }
+        )
+
         return {
             "cached_until": self.py3.time_in(cached_until),
             "color": color,
-            "full_text": self.py3.safe_format(
-                self.format,
-                dict(
-                    is_paused=is_paused,
-                    is_playing=is_playing,
-                    is_started=is_started,
-                    is_stopped=is_stopped,
-                    **data
-                ),
-            ),
+            "full_text": self.py3.safe_format(self.format, moc_data),
         }
 
     def on_click(self, event):

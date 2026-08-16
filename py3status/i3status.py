@@ -1,18 +1,14 @@
+import logging
 import sys
 import time
-
 from copy import deepcopy
-from json import loads
 from datetime import datetime, timezone
-from subprocess import Popen
-from subprocess import PIPE
-from signal import SIGTSTP, SIGSTOP, SIGUSR1, SIG_IGN, signal
+from json import loads
+from signal import SIG_IGN, SIGSTOP, SIGTSTP, SIGUSR1, signal
+from subprocess import PIPE, Popen
 from tempfile import NamedTemporaryFile
 from threading import Thread
 
-from py3status.profiling import profile
-from py3status.py3 import Py3
-from py3status.events import IOPoller
 from py3status.constants import (
     I3S_ALLOWED_COLORS,
     I3S_COLOR_MODULES,
@@ -20,6 +16,11 @@ from py3status.constants import (
     TIME_MODULES,
     TZTIME_FORMAT,
 )
+from py3status.events import IOPoller
+from py3status.profiling import profile
+from py3status.py3 import Py3
+
+logger = logging.getLogger(__name__)
 
 
 class I3statusModule:
@@ -136,7 +137,7 @@ class I3statusModule:
             self.item = item
         else:
             # If no timezone or a minute has passed update timezone
-            t = time.perf_counter()
+            t = time.monotonic()
             if self.time_zone_check_due < t:
                 # If we are late for our timezone update then schedule the next
                 # update to happen when we next get new data from i3status
@@ -145,9 +146,7 @@ class I3statusModule:
                     # we had an issue with an invalid time zone probably due to
                     # suspending.  re check the time zone when we next can.
                     self.time_zone_check_due = 0
-                elif self.time_zone_check_due and (
-                    t - self.time_zone_check_due > 5 + interval
-                ):
+                elif self.time_zone_check_due and (t - self.time_zone_check_due > 5 + interval):
                     self.time_zone_check_due = 0
                 else:
                     # Check again in 30 mins.  We do this in case the timezone
@@ -210,9 +209,9 @@ class I3statusModule:
         date = datetime.strptime(i3s_datetime, TIME_FORMAT)
         # calculate the time delta
         utcnow = datetime.utcnow()
-        delta = datetime(
-            date.year, date.month, date.day, date.hour, date.minute
-        ) - datetime(utcnow.year, utcnow.month, utcnow.day, utcnow.hour, utcnow.minute)
+        delta = datetime(date.year, date.month, date.day, date.hour, date.minute) - datetime(
+            utcnow.year, utcnow.month, utcnow.day, utcnow.hour, utcnow.minute
+        )
         # create our custom timezone
         try:
             self.tz = timezone(delta, i3s_time_tz)
@@ -238,7 +237,7 @@ class I3status(Thread):
         self.json_list = None
         self.json_list_ts = None
         self.last_output = None
-        self.last_refresh_ts = time.perf_counter()
+        self.last_refresh_ts = time.monotonic()
         self.lock = py3_wrapper.lock
         self.new_update = False
         self.py3_config = py3_wrapper.config["py3_config"]
@@ -250,9 +249,7 @@ class I3status(Thread):
         self.update_due = 0
 
         # the update interval is useful to know
-        self.update_interval = self.py3_wrapper.get_config_attribute(
-            "general", "interval"
-        )
+        self.update_interval = self.py3_wrapper.get_config_attribute("general", "interval")
         # do any initialization
         self.setup()
 
@@ -330,6 +327,12 @@ class I3status(Thread):
                         value = TZTIME_FORMAT
                     if key == "format_time":
                         continue
+                # Set output_format to i3bar in general section so that we
+                # receive predictable output from i3status, regardless of our
+                # own output_format configuration
+                if section_name == "general":
+                    if key == "output_format":
+                        value = "i3bar"
                 if isinstance(value, bool):
                     value = f"{value}".lower()
                 self.write_in_tmpfile(f'    {key} = "{value}"\n', tmpfile)
@@ -343,12 +346,11 @@ class I3status(Thread):
 
     def refresh_i3status(self):
         # refresh i3status.  This is rate limited
-        if time.perf_counter() > (self.last_refresh_ts + 0.1):
-            if self.py3_wrapper.config["debug"]:
-                self.py3_wrapper.log("refreshing i3status")
+        if time.monotonic() > (self.last_refresh_ts + 0.1):
+            logger.debug("refreshing i3status")
             if self.i3status_pipe:
                 self.i3status_pipe.send_signal(SIGUSR1)
-            self.last_refresh_ts = time.perf_counter()
+            self.last_refresh_ts = time.monotonic()
 
     @profile
     def run(self):
@@ -380,9 +382,7 @@ class I3status(Thread):
                     preexec_fn=lambda: signal(SIGTSTP, SIG_IGN),
                 )
 
-                self.py3_wrapper.log(
-                    f"i3status spawned using config file {tmpfile.name}"
-                )
+                logger.info("started with config file: %s", tmpfile.name)
 
                 self.poller_inp = IOPoller(i3status_pipe.stdout)
                 self.poller_err = IOPoller(i3status_pipe.stderr)
@@ -408,16 +408,15 @@ class I3status(Thread):
                             err = self.poller_err.readline()
                             code = i3status_pipe.poll()
                             if code is not None:
-                                msg = "i3status died"
                                 if err:
-                                    msg += f" and said: {err}"
+                                    msg = err.split("i3status", 1)[-1].strip(" .:")
                                 else:
-                                    msg += f" with code {code}"
+                                    msg = f"exiting due to code {code}"
                                 raise OSError(msg)
                 except OSError:
                     err = sys.exc_info()[1]
                     self.error = err
-                    self.py3_wrapper.log(err, "error")
+                    logger.error(err)
         except OSError:
             self.error = "Problem starting i3status maybe it is not installed"
         except Exception:

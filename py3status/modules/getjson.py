@@ -29,20 +29,28 @@ Format placeholders:
 Examples:
 ```
 # straightforward key replacement
-url = 'http://ip-api.com/json'
-format = '{lat}, {lon}'
+getjson {
+    url = "https://ifconfig.co/json"
+    format = "{latitude}, {longitude}"
+}
 
 # access child objects
-url = 'https://api.icndb.com/jokes/random'
-format = '{value-joke}'
+getjson {
+    url = 'https://api.icndb.com/jokes/random'
+    format = '{value-joke}'
+}
 
 # access title from 0th element of articles list
-url = 'https://newsapi.org/v1/articles?source=bbc-news&sortBy=top&apiKey={KEY}'
-format = '{articles-0-title}'
+getjson {
+    url = 'https://newsapi.org/v1/articles?source=bbc-news&sortBy=top&apiKey={KEY}'
+    format = '{articles-0-title}'
+}
 
 # access if top-level object is a list
-url = 'https://jsonplaceholder.typicode.com/posts/1/comments'
-format = '{0-name}'
+getjson {
+    url = 'https://jsonplaceholder.typicode.com/posts/1/comments'
+    format = '{0-name}'
+}
 ```
 
 @author vicyap
@@ -55,8 +63,7 @@ STRING_ERROR = "missing url"
 
 
 class Py3status:
-    """
-    """
+    """ """
 
     # available configuration parameters
     cache_timeout = 30
@@ -82,8 +89,7 @@ class Py3status:
             raise Exception(STRING_ERROR)
 
     def getjson(self):
-        """
-        """
+        """ """
         try:
             if self.username is not None and self.password is not None:
                 auth = (self.username, self.password)

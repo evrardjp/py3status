@@ -47,6 +47,14 @@ Check available USE flags if you need them!
 $ emerge -a py3status
 ```
 
+## Alpine Linux
+
+In community repository since Alpine Linux 3.17.
+
+```bash
+$ apk add py3status
+```
+
 ## PyPi
 
 ```bash
@@ -55,7 +63,6 @@ $ pip install py3status
 
 There are optional requirements that you could find useful:
 
-- `py3status[gevent]` for gevent support.
 - `py3status[udev]` for udev support.
 
 Or if you want everything:
@@ -105,5 +112,5 @@ packages that come with i3 (dmenu, i3status, i3lock) have to be
 mentioned if they should still be there.
 
 ```bash
-$ nix-env -i python3.6-py3status
+$ nix-env -i python3.13-py3status
 ```

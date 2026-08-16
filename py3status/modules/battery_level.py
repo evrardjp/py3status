@@ -12,6 +12,7 @@ Configuration parameters:
         (default 60)
     charging_character: a character to represent charging battery
         especially useful when using icon fonts (e.g. FontAwesome)
+        set to 'None' if you want to hide the charging state of your battery
         (default "⚡")
     format: string that formats the output. See placeholders below.
         (default "{icon}")
@@ -91,13 +92,10 @@ discharging
 {'color': '#FF0000', 'full_text': u'\u2340'}
 """
 
-from re import findall
-
 import itertools
 import math
-
 from pathlib import Path
-
+from re import findall
 
 BLOCKS = "_▁▂▃▄▅▆▇█"
 CHARGING_CHARACTER = "⚡"
@@ -193,47 +191,6 @@ class Py3status:
             raise NameError(f"invalid {msg}")
         self.py3.log(f"selected {msg}")
 
-    def battery_level(self):
-        battery_list = self.get_battery_info()
-        if not battery_list:
-            return {
-                "full_text": "",
-                "cached_until": self.py3.time_in(self.cache_timeout),
-            }
-
-        self._refresh_battery_info(battery_list)
-        self._update_icon()
-        self._update_ascii_bar()
-        self._update_status()
-        self._update_full_text()
-
-        return self._build_response()
-
-    def on_click(self, event):
-        """
-        Display a notification following the specified format
-        """
-        if not self.notification:
-            return
-
-        if self.charging:
-            format = self.format_notify_charging
-        else:
-            format = self.format_notify_discharging
-
-        message = self.py3.safe_format(
-            format,
-            dict(
-                ascii_bar=self.ascii_bar,
-                icon=self.icon,
-                percent=self.percent_charged,
-                time_remaining=self.time_remaining,
-            ),
-        )
-
-        if message:
-            self.py3.notify_user(message, "info")
-
     def _extract_battery_info_from_acpi(self):
         """
         Get the battery info from acpi
@@ -253,21 +210,16 @@ class Py3status:
 
         def _parse_battery_info(acpi_battery_lines):
             battery = {}
-            battery["percent_charged"] = int(
-                findall(r"(?<= )(\d+)(?=%)", acpi_battery_lines[0])[0]
-            )
+            battery["percent_charged"] = int(findall(r"(?<= )(\d+)(?=%)", acpi_battery_lines[0])[0])
             battery["charging"] = "Charging" in acpi_battery_lines[0]
-            battery["capacity"] = int(
-                findall(r"(?<= )(\d+)(?= mAh)", acpi_battery_lines[1])[1]
-            )
+            battery["capacity"] = int(findall(r"(?<= )(\d+)(?= mAh)", acpi_battery_lines[1])[1])
 
             # ACPI only shows time remaining if battery is discharging or
             # charging
             try:
                 battery["time_remaining"] = "".join(
                     findall(
-                        r"(?<=, )(\d+:\d+:\d+)(?= remaining)|"
-                        r"(?<=, )(\d+:\d+:\d+)(?= until)",
+                        r"(?<=, )(\d+:\d+:\d+)(?= remaining)|" r"(?<=, )(\d+:\d+:\d+)(?= until)",
                         acpi_battery_lines[0],
                     )[0]
                 )
@@ -284,9 +236,17 @@ class Py3status:
         # Separate the output because each pair of lines corresponds to a
         # single battery.  Now the list index will correspond to the index of
         # the battery we want to look at
-        acpi_list = [acpi_list[i : i + 2] for i in range(0, len(acpi_list) - 1, 2)]
+        temporary = {}
+        for line in acpi_list:
+            number = line.split(":", 1)[0].strip("Battery ")
+            temporary.setdefault(number, []).append(line)
 
-        return [_parse_battery_info(battery) for battery in acpi_list]
+        new_acpi = {}
+        for k, v in temporary.items():
+            if "rate information unavailable" not in "|".join(v):
+                new_acpi[k] = v
+
+        return [_parse_battery_info(battery) for battery in new_acpi.values()]
 
     def _extract_battery_info_from_sys(self):
         """
@@ -318,9 +278,7 @@ class Py3status:
         battery_list = []
 
         bglobs = ["BAT*", "*bat*"]
-        path_its = itertools.chain(
-            *[Path(self.sys_battery_path).glob(bglob) for bglob in bglobs]
-        )
+        path_its = itertools.chain(*[Path(self.sys_battery_path).glob(bglob) for bglob in bglobs])
 
         for path in path_its:
             r = _parse_battery_info(path)
@@ -328,17 +286,13 @@ class Py3status:
             if not r:
                 continue
 
-            capacity = r.get(
-                "POWER_SUPPLY_ENERGY_FULL", r.get("POWER_SUPPLY_CHARGE_FULL")
-            )
+            capacity = r.get("POWER_SUPPLY_ENERGY_FULL", r.get("POWER_SUPPLY_CHARGE_FULL"))
             present_rate = r.get(
                 "POWER_SUPPLY_POWER_NOW",
                 r.get("POWER_SUPPLY_CURRENT_NOW", r.get("POWER_SUPPLY_VOLTAGE_NOW")),
             )
-            remaining_energy = r.get(
-                "POWER_SUPPLY_ENERGY_NOW", r.get("POWER_SUPPLY_CHARGE_NOW")
-            )
-            current_now = r.get("POWER_SUPPLY_CURRENT_NOW", 0)
+            remaining_energy = r.get("POWER_SUPPLY_ENERGY_NOW", r.get("POWER_SUPPLY_CHARGE_NOW"))
+            current_now = r.get("POWER_SUPPLY_CURRENT_NOW", r.get("POWER_SUPPLY_POWER_NOW", 0))
             voltage_now = r.get("POWER_SUPPLY_VOLTAGE_NOW", 0)
 
             # missing values may indicate this is not a battery and should be skipped
@@ -365,7 +319,7 @@ class Py3status:
                     time_in_secs = remaining_energy / present_rate * 3600
                 battery["time_remaining"] = self._seconds_to_hms(time_in_secs)
 
-            battery["power"] = current_now * voltage_now / 10 ** 12
+            battery["power"] = current_now * voltage_now / 10**12
 
             battery_list.append(battery)
         return battery_list
@@ -380,7 +334,7 @@ class Py3status:
         return f"{int(h):2d}:{int(m):02d}:{int(s):02d}"
 
     def _refresh_battery_info(self, battery_list):
-        if type(self.battery_id) == int:
+        if isinstance(self.battery_id, int):
             battery = battery_list[self.battery_id]
             self.percent_charged = battery["percent_charged"]
             self.charging = battery["charging"]
@@ -406,10 +360,7 @@ class Py3status:
             active_battery = None
             inactive_battery = battery_list[:]
             for battery_id, battery in enumerate(battery_list):
-                if (
-                    battery["time_remaining"]
-                    and battery["time_remaining"] != FULLY_CHARGED
-                ):
+                if battery["time_remaining"] and battery["time_remaining"] != FULLY_CHARGED:
                     active_battery = battery
                     del inactive_battery[battery_id]
 
@@ -421,13 +372,10 @@ class Py3status:
             if active_battery and inactive_battery:
                 inactive_battery = inactive_battery[0]
 
-                time_remaining_seconds = self._hms_to_seconds(
-                    active_battery["time_remaining"]
-                )
+                time_remaining_seconds = self._hms_to_seconds(active_battery["time_remaining"])
                 try:
                     rate_second_per_mah = time_remaining_seconds / (
-                        active_battery["capacity"]
-                        * (active_battery["percent_charged"] / 100)
+                        active_battery["capacity"] * (active_battery["percent_charged"] / 100)
                     )
                     time_remaining_seconds += (
                         inactive_battery["capacity"]
@@ -458,9 +406,7 @@ class Py3status:
         if self.charging:
             self.ascii_bar += EMPTY_BLOCK_CHARGING * (10 - self.percent_charged // 10)
         else:
-            self.ascii_bar += EMPTY_BLOCK_DISCHARGING * (
-                10 - self.percent_charged // 10
-            )
+            self.ascii_bar += EMPTY_BLOCK_DISCHARGING * (10 - self.percent_charged // 10)
 
     def _update_status(self):
         if self.charging:
@@ -475,7 +421,7 @@ class Py3status:
             self.status = self.format_status_discharging
 
     def _update_icon(self):
-        if self.charging:
+        if self.charging and self.charging_character is not None:
             self.icon = self.charging_character
         else:
             self.icon = self.blocks[
@@ -539,11 +485,7 @@ class Py3status:
         else:
             battery_status = "good"
 
-        if (
-            notify_msg
-            and self.notify_low_level
-            and self.last_known_status != battery_status
-        ):
+        if notify_msg and self.notify_low_level and self.last_known_status != battery_status:
             self.py3.notify_user(
                 notify_msg["msg"].format(self.percent_charged), notify_msg["level"]
             )
@@ -552,6 +494,47 @@ class Py3status:
 
     def _set_cache_timeout(self):
         self.response["cached_until"] = self.py3.time_in(self.cache_timeout)
+
+    def battery_level(self):
+        battery_list = self.get_battery_info()
+        if not battery_list:
+            return {
+                "full_text": "",
+                "cached_until": self.py3.time_in(self.cache_timeout),
+            }
+
+        self._refresh_battery_info(battery_list)
+        self._update_icon()
+        self._update_ascii_bar()
+        self._update_status()
+        self._update_full_text()
+
+        return self._build_response()
+
+    def on_click(self, event):
+        """
+        Display a notification following the specified format
+        """
+        if not self.notification:
+            return
+
+        if self.charging:
+            format = self.format_notify_charging
+        else:
+            format = self.format_notify_discharging
+
+        message = self.py3.safe_format(
+            format,
+            dict(
+                ascii_bar=self.ascii_bar,
+                icon=self.icon,
+                percent=self.percent_charged,
+                time_remaining=self.time_remaining,
+            ),
+        )
+
+        if message:
+            self.py3.notify_user(message, "info")
 
 
 if __name__ == "__main__":

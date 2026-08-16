@@ -1,13 +1,14 @@
+import logging
 import os
 import time
-
 from pathlib import Path
 from pickle import dump, load
 from tempfile import NamedTemporaryFile
 
+logger = logging.getLogger(__name__)
+
 
 class Storage:
-
     data = {}
     initialized = False
 
@@ -37,11 +38,7 @@ class Storage:
 
         # move legacy storage cache to new desired / default location
         if legacy_storage_path:
-            self.py3_wrapper.log(
-                "moving legacy storage_path {} to {}".format(
-                    legacy_storage_path, self.storage_path
-                )
-            )
+            logger.info("moving legacy path %s to %s", legacy_storage_path, self.storage_path)
             legacy_storage_path.rename(self.storage_path)
 
         try:
@@ -50,18 +47,19 @@ class Storage:
         except OSError:
             pass
 
-        self.py3_wrapper.log(f"storage_path: {self.storage_path}")
+        logger.info("path: %s", self.storage_path)
         if self.data:
-            self.py3_wrapper.log(f"storage_data: {self.data}")
+            logger.debug(
+                "keys: %s",
+                {module_name: list(module_data) for module_name, module_data in self.data.items()},
+            )
         self.initialized = True
 
     def get_legacy_storage_path(self):
         """
         Detect and return existing legacy storage path.
         """
-        config_dir = Path(
-            self.py3_wrapper.config.get("i3status_config_path", "/tmp")
-        ).parent
+        config_dir = Path(self.py3_wrapper.config.get("i3status_config_path", "/tmp")).parent
         storage_path = config_dir / "py3status.data"
         if storage_path.exists():
             return storage_path
@@ -73,8 +71,7 @@ class Storage:
         Save our data to disk. We want to always have a valid file.
         """
         with NamedTemporaryFile(dir=self.storage_path.parent, delete=False) as f:
-            # we use protocol=2 for python 2/3 compatibility
-            dump(self.data, f, protocol=2)
+            dump(self.data, f)
             f.flush()
             os.fsync(f.fileno())
             tmppath = Path(f.name)

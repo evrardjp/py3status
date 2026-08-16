@@ -1,20 +1,22 @@
+import logging
 import os
-import sys
+import re
 import shlex
+import sys
 import time
-
 from collections.abc import Mapping
 from copy import deepcopy
 from fnmatch import fnmatch
 from math import log10
 from pathlib import Path
-from pprint import pformat
 from shutil import which
-from subprocess import Popen, PIPE, STDOUT
+from subprocess import PIPE, STDOUT, Popen
+from time import sleep
 from uuid import uuid4
 
 from py3status import exceptions
-from py3status.formatter import Formatter, Composite, expand_color
+from py3status.formatter import Composite, Formatter, expand_color
+from py3status.log import log_message, module_logger_name
 from py3status.request import HttpResponse
 from py3status.storage import Storage
 from py3status.util import Gradients
@@ -101,7 +103,9 @@ class Py3:
         self._format_color_names = {}
         self._format_placeholders = {}
         self._format_placeholders_cache = {}
+        self._logger = None
         self._module = module
+        self._replacements = None
         self._report_exception_cache = set()
         self._thresholds = None
         self._threshold_gradients = {}
@@ -144,10 +148,6 @@ class Py3:
                 # use color "hidden" to hide blocks
                 if _name == "hidden":
                     param = "hidden"
-                # TODO: removing this statement does not fail "test_color_10()" but would fail
-                # easily in the bar. the test is there to raise awareness about this.
-                # TODO: "test_color_11()" shows how the tests can be incorrect as it does not print
-                # everything correctly (i.e. orange vs ORaNgE) due to non composite/formatter code.
                 elif hasattr(param, "none_setting"):
                     # see if named color and use if it is
                     param = expand_color(_name)
@@ -177,7 +177,7 @@ class Py3:
             except TypeError:
                 pass
             self._thresholds[None] = [(x[0], self._get_color(x[1])) for x in thresholds]
-            return
+
         elif isinstance(thresholds, dict):
             for key, value in thresholds.items():
                 if isinstance(value, list):
@@ -185,8 +185,25 @@ class Py3:
                         value.sort()
                     except TypeError:
                         pass
-                    self._thresholds[key] = [
-                        (x[0], self._get_color(x[1])) for x in value
+                    self._thresholds[key] = [(x[0], self._get_color(x[1])) for x in value]
+
+    def _replacements_init(self):
+        """
+        Initiate and check any replacements set
+        """
+        replacements = getattr(self._py3status_module, "replacements", [])
+        self._replacements = {}
+
+        if isinstance(replacements, list):
+            self._replacements[None] = [
+                (re.compile(x[0], re.IGNORECASE), x[1]) for x in replacements
+            ]
+
+        elif isinstance(replacements, dict):
+            for key, value in replacements.items():
+                if isinstance(value, list):
+                    self._replacements[key] = [
+                        (re.compile(x[0], re.IGNORECASE), x[1]) for x in value
                     ]
 
     def _get_module_info(self, module_name):
@@ -226,9 +243,7 @@ class Py3:
         while frame_skip:
             error_frame = error_frame.f_back
             frame_skip -= 1
-        self._py3_wrapper.report_exception(
-            msg, notify_user=False, error_frame=error_frame
-        )
+        self._py3_wrapper.report_exception(msg, notify_user=False, error_frame=error_frame)
 
     def error(self, msg, timeout=None):
         """
@@ -303,9 +318,7 @@ class Py3:
             if isinstance(v, list):
                 v = dict(enumerate(v))
             if isinstance(v, Mapping):
-                items.extend(
-                    self.flatten_dict(v, delimiter, intermediates, str(k)).items()
-                )
+                items.extend(self.flatten_dict(v, delimiter, intermediates, str(k)).items())
             else:
                 items.append((str(k), v))
         return dict(items)
@@ -420,12 +433,6 @@ class Py3:
         """
         return self._i3s_config
 
-    def is_gevent(self):
-        """
-        Checks if gevent monkey patching is enabled or not.
-        """
-        return self._py3_wrapper.is_gevent
-
     def is_my_event(self, event):
         """
         Checks if an event triggered belongs to the module receiving it.  This
@@ -441,28 +448,21 @@ class Py3:
             and event.get("instance") == self._module.module_inst
         )
 
-    def log(self, message, level=LOG_INFO):
+    def log(self, message, level=LOG_INFO, name=None):
         """
         Log the message.
-        The level must be one of LOG_ERROR, LOG_INFO or LOG_WARNING
+        The `level` can be any valid logging module level name or int.
+        Constants LOG_ERROR, LOG_INFO, and LOG_WARNING are also supported.
+        Specifying `name` uses a logger with a given name or module_name if None.
         """
-        assert level in [
-            self.LOG_ERROR,
-            self.LOG_INFO,
-            self.LOG_WARNING,
-        ], "level must be LOG_ERROR, LOG_INFO or LOG_WARNING"
-
-        # nicely format logs if we can using pretty print
-        if isinstance(message, (dict, list, set, tuple)):
-            message = pformat(message)
-        # start on new line if multi-line output
-        try:
-            if "\n" in message:
-                message = "\n" + message
-        except:  # noqa e722
-            pass
-        message = f"Module `{self._module.module_full_name}`: {message}"
-        self._py3_wrapper.log(message, level)
+        if name:
+            logger = logging.getLogger(name)
+        else:
+            logger = self._logger
+            if logger is None:
+                logger = logging.getLogger(module_logger_name(self._module.module_full_name))
+                self._logger = logger
+        log_message(logger, message, level)
 
     def update(self, module_name=None):
         """
@@ -626,7 +626,7 @@ class Py3:
                     seconds -= 0.1
 
         current_time = time.time()
-        requested = time.perf_counter() + seconds - offset
+        requested = time.monotonic() + seconds - offset
 
         # if sync_to then we find the sync time for the requested time
         if sync_to:
@@ -722,6 +722,28 @@ class Py3:
                     found.add(name)
         return list(found)
 
+    def get_replacements_list(self, format_string):
+        """
+        If possible, returns a list of filtered placeholders in ``format_string``.
+        """
+        replacements = getattr(self._py3status_module, "replacements", None)
+        if not replacements or not format_string:
+            return []
+
+        if format_string not in self._format_placeholders:
+            placeholders = self._formatter.get_placeholders(format_string)
+            self._format_placeholders[format_string] = placeholders
+        else:
+            placeholders = self._format_placeholders[format_string]
+
+        # filter placeholders
+        found = set()
+        for replacement in replacements:
+            for placeholder in placeholders:
+                if placeholder == replacement:
+                    found.add(placeholder)
+        return list(found or placeholders)
+
     def get_placeholders_list(self, format_string, matches=None):
         """
         Returns a list of placeholders in ``format_string``.
@@ -778,7 +800,12 @@ class Py3:
         return self._formatter.update_placeholder_formats(format_string, formats)
 
     def safe_format(
-        self, format_string, param_dict=None, force_composite=False, attr_getter=None
+        self,
+        format_string,
+        param_dict=None,
+        force_composite=False,
+        attr_getter=None,
+        max_width=None,
     ):
         r"""
         Parser for advanced formatting.
@@ -835,54 +862,33 @@ class Py3:
 
         attr_getter is a function that will when called with an attribute name
         as a parameter will return a value.
+
+        max_width lets you to control the total max width of 'full_text' the
+        module is allowed to output on the bar.
         """
         try:
-            return self._formatter.format(
+            result = self._formatter.format(
                 format_string,
                 self._py3status_module,
                 param_dict,
                 force_composite=force_composite,
                 attr_getter=attr_getter,
             )
-        except Exception:
-            self._report_exception(f"Invalid format `{format_string}`")
-            return "invalid format"
-
-    def build_composite(
-        self, format_string, param_dict=None, composites=None, attr_getter=None
-    ):
-        """
-        .. note::
-            deprecated in 3.3 use safe_format().
-
-        Build a composite output using a format string.
-
-        Takes a format_string and treats it the same way as ``safe_format()`` but
-        also takes a composites dict where each key/value is the name of the
-        placeholder and either an output eg ``{'full_text': 'something'}`` or a
-        list of outputs.
-        """
-
-        if param_dict is None:
-            param_dict = {}
-
-        # merge any composites into the param_dict.
-        # as they are no longer dealt with separately
-        if composites:
-            for key, value in composites.items():
-                param_dict[key] = Composite(value)
-
-        try:
-            return self._formatter.format(
-                format_string,
-                self._py3status_module,
-                param_dict,
-                force_composite=True,
-                attr_getter=attr_getter,
-            )
-        except Exception:
-            self._report_exception(f"Invalid format `{format_string}`")
-            return [{"full_text": "invalid format"}]
+            if max_width is not None and max_width > 0:
+                if isinstance(result, str):
+                    result = result[:max_width]
+                elif isinstance(result, Composite):
+                    chars_left = max_width
+                    for composite in result:
+                        if "index" in composite:
+                            continue
+                        composite["full_text"] = composite["full_text"][:chars_left]
+                        chars_left -= len(composite["full_text"])
+                        chars_left = max(0, chars_left)
+            return result
+        except Exception as err:
+            self._report_exception(f"Invalid format `{format_string}` ({err})")
+            return f"invalid format ({err})"
 
     def composite_update(self, item, update_dict, soft=False):
         """
@@ -964,11 +970,9 @@ class Py3:
             msg = f"Command `{pretty_cmd}` {e.errno}"
             raise exceptions.CommandError(msg, error_code=e.errno)
 
-    def command_output(
-        self, command, shell=False, capture_stderr=False, localized=False
-    ):
+    def command_output(self, command, shell=False, capture_stderr=False, localized=False):
         """
-        Run a command and return its output as unicode.
+        Run a command and return its output as text.
         The command can either be supplied as a sequence or string.
 
         :param command: command to run can be a str or list
@@ -1021,9 +1025,7 @@ class Py3:
                 if output_oneline:
                     msg += " ({output})"
                 msg = msg.format(cmd=pretty_cmd, error=retcode, output=output_oneline)
-                raise exceptions.CommandError(
-                    msg, error_code=retcode, error=error, output=output
-                )
+                raise exceptions.CommandError(msg, error_code=retcode, error=error, output=output)
         return output
 
     def _storage_init(self):
@@ -1078,24 +1080,6 @@ class Py3:
         module_name = self._module.module_full_name
         return self._storage.storage_keys(module_name)
 
-    def storage_items(self):
-        """
-        Return key, value pairs of the stored data for the module.
-
-        Keys will contain the following metadata entries:
-        - '_ctime': storage creation timestamp
-        - '_mtime': storage last modification timestamp
-        """
-        if not self._module:
-            return {}.items()
-        self._storage_init()
-        items = []
-        module_name = self._module.module_full_name
-        for key in self._storage.storage_keys(module_name):
-            value = self._storage.storage_get(module_name, key)
-            items.add((key, value))
-        return items
-
     def play_sound(self, sound_file):
         """
         Plays sound_file if possible.
@@ -1144,9 +1128,7 @@ class Py3:
         if isinstance(name, tuple):
             name_used = "{}/{}".format(name[0], name[1])
             if name[2]:
-                self._thresholds[name_used] = [
-                    (x[0], self._get_color(x[1])) for x in name[2]
-                ]
+                self._thresholds[name_used] = [(x[0], self._get_color(x[1])) for x in name[2]]
             name = name[0]
         else:
             # if name not in thresholds info then use defaults
@@ -1178,9 +1160,7 @@ class Py3:
                     try:
                         colors, minimum, maximum = self._threshold_gradients[name_used]
                     except KeyError:
-                        colors = self._gradients.make_threshold_gradient(
-                            self, thresholds
-                        )
+                        colors = self._gradients.make_threshold_gradient(self, thresholds)
                         minimum = min(thresholds)[0]
                         maximum = max(thresholds)[0]
                         self._threshold_gradients[name_used] = (
@@ -1195,9 +1175,7 @@ class Py3:
                         color = colors[-1]
                     else:
                         value -= minimum
-                        col_index = int(
-                            ((len(colors) - 1) / (maximum - minimum)) * value
-                        )
+                        col_index = int(((len(colors) - 1) / (maximum - minimum)) * value)
                         color = colors[col_index]
                 else:
                     color = thresholds[0][1]
@@ -1217,6 +1195,29 @@ class Py3:
         setattr(self._py3status_module, color_name, color)
 
         return color
+
+    def replace(self, value, name=None):
+        """
+        Replace string using replacements.
+
+        :param value: string value to be replaced
+        :param name: accepts a name
+        """
+        # If first run, then process the replacements data.
+        if self._replacements is None:
+            self._replacements_init()
+
+        if not value or not isinstance(value, str):
+            return value
+
+        name_used = name
+        if name_used not in self._replacements:
+            name_used = None
+
+        for pattern, replacement in self._replacements.get(name_used, []):
+            value = re.sub(pattern, replacement, value)
+
+        return value
 
     def request(
         self,
@@ -1290,10 +1291,6 @@ class Py3:
             try:
                 return get_http_response()
             except (self.RequestTimeout, self.RequestURLError):
-                if self.is_gevent():
-                    from gevent import sleep
-                else:
-                    from time import sleep
                 self.log(f"HTTP request retry {n}/{retry_times}")
                 sleep(retry_wait)
         self.log(f"HTTP request retry {retry_times}/{retry_times}")
